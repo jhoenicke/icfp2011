@@ -41,6 +41,7 @@ module Engine :
      *)
     val apply_cards  : slots -> slots -> card -> card -> bool -> card
 
+    val string_of_card : card -> string
     val print_card   : card -> unit
     val prerr_slots  : slots -> unit
     val print_move   : move -> unit
