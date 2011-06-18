@@ -5,9 +5,7 @@ open Strategy
 
 
 let rec mainloop prepon oppon player opponent = 
-  let rec process_zombies i = match i with
-  256 -> ()
-  | _ ->
+  let rec process_zombies i = if i == 256 then () else
     let oldval = get_vitality prepon i in
     if (oldval == -1) then (
       let card   = get_card prepon i in

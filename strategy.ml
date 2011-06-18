@@ -184,7 +184,7 @@ let step_revive prepon oppon strategy =
        | _       -> AppCS(Put, tmpreg), strategy in
 
     let rec reviveloop reg  =
-        if (reg = 256) then
+        if (reg == 256) then
            step_strategy prepon oppon strategy
         else if (not (isfree.(reg)) && (get_vitality prepon reg <= 0)) then
            revive_reg reg

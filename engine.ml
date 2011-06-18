@@ -178,7 +178,7 @@ module Engine = struct
           (match argi with 
              Val n ->  if (n < 0 || n > 255) then raise ApplyError
                        else let oldval = get_vitality oppon (255-n) in
-                         if oldval <= 0 then (set_slot oppon n (-1, arg))
+                         if oldval <= 0 then (set_slot oppon (255-n) (-1, arg))
                          else raise ApplyError; I
            | _ -> raise ApplyError)
       | _ -> App (func, arg)
