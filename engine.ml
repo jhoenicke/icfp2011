@@ -148,33 +148,43 @@ module Engine = struct
 		       ); I
            | _ -> raise ApplyError)
       | App (App (Attack, argi), argj) ->
-          (match argi,argj,arg with 
-             Val i, Val j, Val n ->  
-                       if (i < 0 || i > 255) then raise ApplyError
-		       else let myval = get_vitality prepon i in
-		       if (myval < n) then raise ApplyError
-		       else (set_vitality prepon i (myval-n));
-		       if (j < 0 || j > 255) then raise ApplyError
-		       else let oldval = get_vitality oppon (255-j) in
-		       let dec = if isZombie then -(n*9/10) else n*9/10 in
-		       set_vitality oppon (255-j) 
-		            (if oldval <= 0 then oldval
-			     else limit_vitality (oldval - dec)); I
-           | _ -> raise ApplyError)
+          (match argi,arg with 
+             Val i, Val n ->  
+               if (i < 0 || i > 255) then raise ApplyError
+	       else let myval = get_vitality prepon i in
+		    if (myval < n) then raise ApplyError
+		    else (
+		      set_vitality prepon i (myval-n); 
+		      match argj with
+			  Val j ->
+			    if (j < 0 || j > 255) then raise ApplyError
+			    else let oldval = get_vitality oppon (255-j) in
+				 let dec = if isZombie then -(n*9/10) else n*9/10 in
+				 set_vitality oppon (255-j) 
+				   (if oldval <= 0 then oldval
+				    else limit_vitality (oldval - dec)); I
+			| _ -> raise ApplyError
+		    )
+            | _ -> raise ApplyError)
       | App (App (Help, argi), argj) ->
-          (match argi,argj,arg with 
-             Val i, Val j, Val n ->  
-                       if (i < 0 || i > 255) then raise ApplyError
-		       else let myval = get_vitality prepon i in
-		       if (myval < n) then raise ApplyError
-		       else (set_vitality prepon i (myval-n));
-		       if (j < 0 || j > 255) then raise ApplyError
-		       else let oldval = get_vitality prepon j in
-		       let inc = if isZombie then -(n*11/10) else n*11/10 in
-		       set_vitality prepon j 
-		            (if oldval <= 0 then oldval
-			     else limit_vitality (oldval + inc)); I
-           | _ -> raise ApplyError)
+          (match argi,arg with 
+             Val i, Val n ->  
+               if (i < 0 || i > 255) then raise ApplyError
+	       else let myval = get_vitality prepon i in
+		    if (myval < n) then raise ApplyError
+		    else (
+		      set_vitality prepon i (myval-n) ;
+		      match argj with
+			  Val j -> 
+			    if (j < 0 || j > 255) then raise ApplyError
+			    else let oldval = get_vitality prepon j in
+				 let inc = if isZombie then -(n*11/10) else n*11/10 in
+				 set_vitality prepon j 
+				   (if oldval <= 0 then oldval
+				    else limit_vitality (oldval + inc)); I
+			| _ -> raise ApplyError
+		    )
+	    | _ -> raise ApplyError)
       | Revive           ->
           (match arg with 
              Val n ->  if (n < 0 || n > 255) then raise ApplyError

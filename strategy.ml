@@ -204,12 +204,20 @@ let rec watch_double_zombie installer hisdead codereg prepon oppon tail =
   if (get_vitality oppon hisdead < 0) then 
     Yield :: Code(watch_double_zombie installer hisdead codereg) :: tail
   else (
-    (*prerr_string ("reinstall double zombie " ^ 
+    prerr_string ("reinstall double zombie " ^ 
                   string_of_int installer ^ " " ^
                   string_of_int hisdead ^ " " ^
                   string_of_int codereg); prerr_newline ();
-    prerr_slots oppon;*)
-    Code(install_zombie installer hisdead (Get *+ Val codereg)) :: 
+    prerr_slots oppon;
+    let t1 = alloc_reg() in
+    let t2 = alloc_reg() in
+    Code(set_card t1 (Get *+ Val 0))::
+      Code(set_card t2 (Get *+ Val 1))::
+      Code(install_zombie installer hisdead (Get *+ Val codereg)) :: 
+      Code(set_card 0 (Get *+ Val t1)) ::
+      Code(free_reg t1) ::
+      Code(set_card 1 (Get *+ Val t2)) ::
+      Code(free_reg t2) ::
       Code(watch_double_zombie installer hisdead codereg) :: tail
   )
 
@@ -230,7 +238,7 @@ let double_zombie prepon oppon tail =
         (S *+ (K *+ (Zombie *+ Val (255-hisdeadreg)))
            *+ (K *+ (S *+ (S *+ (K *+ Inc) *+ (K *+ Val 0))
                        *+ (Get *+ Val backzombie))))) ::
-   let attack =
+   let attack prepon oppon tail =
      let vital = get_vitality oppon 0 in
      let snd_zombiereg = 254 in
        Code(set_card 1  (Zombie *+ Val (255-hisdeadreg) *+
@@ -246,9 +254,9 @@ let double_zombie prepon oppon tail =
 	    
    let myvital = get_vitality prepon mydeadreg in
    if (myvital > 0) then
-       Code(set_card 1 (Attack *+ Val mydeadreg *+ Val hisdeadreg *+ Val myvital)) :: attack
+       Code(set_card 1 (Attack *+ Val mydeadreg *+ Val hisdeadreg *+ Val myvital)) :: Code(attack) :: tail
    else
-       attack
+       Code(attack) :: tail
 
 
 let binapply c = App(S, App(K, c))
@@ -297,6 +305,38 @@ let rec revive prepon oppon tail =
 
     reviveloop 0
 
+
+let rec random_apply start cnt prepon oppon tail =
+  let rand = Random.int cnt in
+  Code(set_card 20 (Get *+ Val (start+rand))) :: 
+  Move(AppSC(20, I)) :: Code(random_apply start cnt) :: tail
+
+let defender prepon oppon tail = 
+(*   Code(set_card 25 (S *+ (S *+ (K *+ Revive) *+ (K *+ Val 254)) *+
+	                  (S *+ (K *+ (Help *+ Val 128 *+ Val 254)) *+ (K *+ Val 50)))) ::
+*)
+   Code(set_card 26 (S *+ (S *+ (K *+ Revive) *+ (K *+ Val 255)) *+
+	                  (S *+ (K *+ (Help *+ Val 128 *+ Val 255)) *+ (K *+ Val 50)))) ::
+
+   Code(set_card 27 (S *+ (S *+ (K *+ Revive) *+ (K *+ Val 0)) *+
+	                  (S *+ (K *+ (Help *+ Val 128 *+ Val 0)) *+ (K *+ Val 50)))) ::
+
+   Code(set_card 28 (S *+ (S *+ (K *+ Revive) *+ (K *+ Val 255)) *+
+	                  (S *+ (K *+ Inc) *+ (K *+ Val 255)))) ::
+(*
+   Code(set_card 29 (S *+ (S *+ (K *+ Revive) *+ (K *+ Val 254)) *+
+	                  (S *+ (K *+ Inc) *+ (K *+ Val 254)))) ::
+   Code(set_card 30 (S *+ (S *+ (K *+ Revive) *+ (K *+ Val 0)) *+
+	                  (S *+ (K *+ Inc) *+ (K *+ Val 0)))) :: 
+   Code(set_card 31 (S *+ (K *+ (Help *+ Val 129 *+ Val 128)) *+ (K *+ Val 200))) ::*)
+   Code(random_apply 26 3) :: tail
+
+     
+(*
+let inittask = 
+   tasks.(3) <- [ Code(defender) ]; 
+   tasks
+*)
 let inittask = 
    tasks.(0) <- [ Code(revive) ];
    tasks.(3) <- [ Code(main_strategy) ]; 
