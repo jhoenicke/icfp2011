@@ -204,11 +204,11 @@ let rec watch_double_zombie installer hisdead codereg prepon oppon tail =
   if (get_vitality oppon hisdead < 0) then 
     Yield :: Code(watch_double_zombie installer hisdead codereg) :: tail
   else (
-    prerr_string ("reinstall double zombie " ^ 
+    (*prerr_string ("reinstall double zombie " ^ 
                   string_of_int installer ^ " " ^
                   string_of_int hisdead ^ " " ^
                   string_of_int codereg); prerr_newline ();
-    prerr_slots oppon;
+    prerr_slots oppon;*)
     Code(install_zombie installer hisdead (Get *+ Val codereg)) :: 
       Code(watch_double_zombie installer hisdead codereg) :: tail
   )
