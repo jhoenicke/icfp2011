@@ -9,10 +9,13 @@ type macros =
    | SetCard of (int * card)    (* r c: set the slot r to card c *)
    | ApplySlots of (int * int)  (* r1 r2: set the slot r1 to App(r1,r2) *)
    | FreeReg of (int)           (* r: free register r *)
-   | CopyReg of (int * int)     (* d s: copy register s into register d *)
+   | CopyReg of (int * int)     (* d s: copy slot s into slot d *)
    | DoubleCard of (int)        (* r: slot[r].card  := 
                                            S slot[r].card slot[r].card *)
    | UseZombie of (int * int)
+   | PrepareBinApply of (int)   (* r: apply K and S to r to prepare bin apply *)
+   | BinApply of (int * card)   (* r c: apply slot r to func c and arg c *)
+   | ApplyCard of (int * card)  (* r c: apply slot r to card c *)
 
 let isfree = 
   let arr = Array.make 256 true in
@@ -35,6 +38,21 @@ let is_simple_card = function
 let apply0 card =
   App(App(S, card),App(App(S,Get), I))
 
+let rec cost_step_number i n =
+  let rec num_steps n = 
+    if (n == 0) then 2
+    else (num_steps (n / 2)) + 1 + (n mod 2) in
+
+  if (i > n) then num_steps n
+  else if (i < n/2) then 1 + cost_step_number i (n/2)
+  else min (n - i) (num_steps n)
+
+let rec cost_step_number_card c n =
+  match c with 
+    Val i -> cost_step_number i n
+  | I     -> 1 + cost_step_number 0 n
+  | _     -> 2 + cost_step_number 0 n
+
 let rec step_number r i n =
   let rec num_steps n = 
     if (n == 0) then 2
@@ -55,6 +73,24 @@ let rec step_strategy prepon oppon = function
      | Val i -> ((step_number r i n), SetNumber(r,n) :: tail)
      | _     -> (AppCS (Put, r), SetNumber(r,n) :: tail)
      )
+| ApplyCard(r, c) :: tail ->
+     if (is_simple_card c) then AppSC(r,c), tail
+     else step_strategy prepon oppon 
+                (PrepareBinApply(r) :: BinApply(r,c) :: tail)
+| PrepareBinApply(r) :: tail ->
+     AppCS(K, r), SimpleStep(AppCS(S,r)) :: tail
+| BinApply(r, c) :: tail ->
+     let fallback = step_strategy prepon oppon
+                (SetCard(0, c) :: BinApply(r, App(Get, (Val 0))) :: tail) in
+     let binapply c1 c2 =
+                AppSC(r, c1), SimpleStep(AppSC(r,c2)) :: tail in
+     (match c with 
+       Val 1 -> binapply Succ (Val 0)
+     | App(f,a) -> if (is_simple_card f && is_simple_card a) then
+                    binapply f a
+                 else
+                    fallback
+     | _ -> fallback)
 | ApplySlots(r1,r2) :: tail ->
      if (r2 != 0) then 
         step_strategy prepon oppon
@@ -62,9 +98,8 @@ let rec step_strategy prepon oppon = function
                        ApplySlots (r1, 0) :: tail)
      else
         step_strategy prepon oppon
-                      (SimpleStep (AppCS(K, r1)) :: SimpleStep (AppCS(S,r1)) ::
-                       SimpleStep (AppSC(r1, Get)) :: 
-                       SimpleStep (AppSC(r1, Val 0)) :: tail)
+                      (PrepareBinApply(r1) :: 
+                       BinApply(r1, App(Get, (Val 0))) :: tail)
 | SimpleStep step :: tail -> (step, tail)
 | FreeReg(r) :: tail ->
          isfree.(r) <- true ; step_strategy prepon oppon tail
@@ -101,16 +136,65 @@ let rec step_strategy prepon oppon = function
       SetCard(1, App(App(Zombie, Val r),App(Get, Val 2))) ::
       UseZombie(((s+1) mod 256), r)::tail)
 | _ -> raise (Failure "Unimplemented Strategy")
-       
+
+let binapply c = App(S, App(K, c))
 
 let global_strategy = ref 
-    [ SetCard(1, App(App(App(Attack,Val 2),Val 0),Val 6000));
-      SetCard(1, App(App(App(Attack,Val 3),Val 0),Val 6000));
+    [ 
+      (* Attack + Attack *)
+      SetCard(0, Val 2);
+      SetCard(1, App(App(Attack, App(Get, Val 0)), Val 0));
+      SetCard(0, Val 3);
+      SetCard(2, App(App(Attack, App(Get, Val 0)), Val 0));
+      SetCard(0, Val (6*1024));
+      ApplyCard(1, App(Get, Val 0));
+      ApplyCard(2, App(Get, Val 0));
+   (* Help + Attack:
+      SetCard(1, App(Help, Val 2));
+      SetCard(0, Val 3);
+      ApplyCard(1, App(Get, Val 0));
+      SetCard(2, App(Attack, App(Get, Val 0)));
+      ApplyCard(2, Val 0);
+      ApplyCard(1, Val (6*1024));
+      ApplyCard(2, Val (12*1024));*)
       UseZombie(0,0)
     ]
 
+
+let step_revive prepon oppon strategy =
+    let rec findbestreg start reg best = 
+       if (start == 256) then best else
+       let newbest = if not (isfree.(best)) then start
+           else if not (isfree.(start)) then best
+           else if (get_vitality prepon start <= 0) then best
+           else if (get_vitality prepon best <= 0) then start
+           else let bestcard = get_card prepon best in
+                let startcard =  get_card prepon start in
+	        if (cost_step_number_card bestcard reg
+                    <= cost_step_number_card startcard reg)
+                then best else start in
+       findbestreg (start+1) reg newbest in
+
+    let revive_reg reg  =
+       let tmpreg = findbestreg 0 reg 0 in
+       match get_card prepon tmpreg with
+         Val reg -> AppCS(Revive, tmpreg), strategy
+       | Val i   -> step_number reg i reg, strategy
+       | I       -> AppSC(tmpreg, Val 0), strategy
+       | _       -> AppCS(Put, tmpreg), strategy in
+
+    let rec reviveloop reg  =
+        if (reg = 256) then
+           step_strategy prepon oppon strategy
+        else if (not (isfree.(reg)) && (get_vitality prepon reg <= 0)) then
+           revive_reg reg
+        else
+           reviveloop (reg+1) in
+
+    reviveloop 0
+
 let play_strategy prepon oppon =
-    match step_strategy prepon oppon !global_strategy with
+    match step_revive prepon oppon !global_strategy with
        (move,tail) -> global_strategy := tail; move
 
 end
