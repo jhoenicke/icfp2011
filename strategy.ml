@@ -178,8 +178,8 @@ let step_revive prepon oppon strategy =
     let revive_reg reg  =
        let tmpreg = findbestreg 0 reg 0 in
        match get_card prepon tmpreg with
-         Val reg -> AppCS(Revive, tmpreg), strategy
-       | Val i   -> step_number reg i reg, strategy
+         Val i   -> if i == reg then  AppCS(Revive, tmpreg), strategy
+                    else              step_number tmpreg i reg, strategy
        | I       -> AppSC(tmpreg, Val 0), strategy
        | _       -> AppCS(Put, tmpreg), strategy in
 

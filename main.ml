@@ -15,8 +15,8 @@ let rec mainloop prepon oppon player opponent =
     ) else ();
     process_zombies (i+1) in
 	
-  process_zombies 0;
   (*prerr_slots prepon;*)
+  process_zombies 0;
   let move = player prepon oppon in
   match move with
     AppCS(card1, slot) -> 
