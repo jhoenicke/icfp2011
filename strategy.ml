@@ -12,6 +12,9 @@ type task =
 
 let tasks = Array.make 4 ([] : task list)
 
+let rec buildrec card n = if (n == 1) then card else
+    (S *+ (buildrec card (n - 1)) *+ card)
+
 let isfree = 
   let arr = Array.make 256 true in
   arr.(0) <- false;
@@ -261,8 +264,6 @@ let phase3 installer hisdeadreg backzombie prepon oppon tail =
   :: Code(phase4 installer) :: tail
 
 let phase2 installer hisdeadreg zombiereg backzombie prepon oppon tail =
-  let rec buildrec card n = if (n == 1) then card else
-      (S *+ (buildrec card (n - 1)) *+ card) in
   Code(set_card installer (buildrec Dec 10)) ::
     Code(double_dec installer) ::
     Code(double_dec installer) ::
@@ -384,6 +385,64 @@ let defender prepon oppon tail =
    Code(set_card 31 (S *+ (K *+ (Help *+ Val 129 *+ Val 128)) *+ (K *+ Val 200))) ::*)
    Code(random_apply 26 3) :: tail
 
+let attack_from fromreg toreg prepon oppon tail =
+  let rec continue prepon oppon tail = 
+    if (get_card prepon 0 = Val (get_vitality prepon fromreg)) then
+      Move(AppSC(1, Val 0)) :: tail
+    else
+      Code(set_number 0 (get_vitality prepon fromreg)) ::
+	Code(continue) :: tail in
+      
+  Code(set_card 1 (S *+ (K *+ (Attack *+ Val fromreg *+ Val (255-toreg)))
+		   *+ Get)) :: Code(continue) :: tail
+
+let rec revive_zombie mydeadreg hisdeadreg prepon oppon tail =
+  if (get_vitality prepon mydeadreg > 0) then
+    Code(attack_from mydeadreg hisdeadreg) :: 
+      Code(revive_zombie mydeadreg hisdeadreg) :: tail
+  else if (get_vitality oppon hisdeadreg > 320) then
+    Code(attack hisdeadreg) :: Code(revive_zombie mydeadreg hisdeadreg) :: tail
+  else if (get_vitality oppon hisdeadreg >= 0) then
+    Move(AppSC(64, I)) :: Code(revive_zombie mydeadreg hisdeadreg) :: tail
+  else
+    Yield :: Code(revive_zombie mydeadreg hisdeadreg) :: tail
+
+let rec main_strategy_strongdbl_zombie prepon oppon tail =
+  isfree.(64) <- false;
+  let installer = alloc_reg () in
+  let inc5 = alloc_reg () in
+  let mydeadreg = 255 in
+  let hisdeadreg = 255 in
+  let continue prepon oppon tail =
+    tasks.(1) <- [ Code(revive_zombie mydeadreg hisdeadreg) ];
+    Code(phase4 installer) :: tail in
+  (* Create zombie installer: it does 320 dec before invoking zombie *)
+  (* Usage: (Get *+ Val installer) *+ zombiecode *+ (255-zombiereg) *)
+  Code(set_card installer (buildrec Dec 10)) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Move(AppCS(S, installer)) ::
+    Move(AppCS(K, installer)) ::
+    Move(AppCS(S, installer)) ::
+    Code(apply_card installer (S *+ (K *+ (S *+ Zombie)) *+ K)) ::
+    (* Create zombie code; it uses a simpler installer *)
+    Code(set_card inc5 (buildrec Inc 5)) ::
+    Code(set_card 0 (S*+ (S *+ (S *+ (K *+ (Get *+ Val inc5)) *+ (K *+ Val 0))
+	                  *+ (S *+ (K *+ (Get *+ Val inc5)) *+ (K *+ Val 1)))
+		     *+ (S *+ (K *+ (Zombie *+ Val (255 - mydeadreg)))
+			 *+ (S *+ (K *+ Copy) *+ (K *+ Val 64))))) ::
+    Code(set_card 64 (Get *+ Val installer)) ::
+    Code(apply_card 64 (Get *+ Val 0)) ::
+    Move(AppCS(K, 64)) ::
+    Move(AppCS(S, 64)) ::
+    Code(apply_card 64 (K *+ Val (255-hisdeadreg))) ::
+    Move(AppCS(S, 64)) ::
+    Code(apply_card 64 (S *+ (K *+ Get) *+ (K *+ Val 64))) ::
+    Code(attack_from mydeadreg hisdeadreg) ::
+    Code(continue) :: tail
 
 let rec newreviver prepon oppon tail =
   let rec need_saving i =
@@ -393,7 +452,7 @@ let rec newreviver prepon oppon tail =
     else if (i == 255) then -1 else need_saving (i+1) in
   
   let savereg = need_saving 0 in
-  prerr_string ("newreviver " ^ string_of_int savereg); prerr_newline();
+  (*prerr_string ("newreviver " ^ string_of_int savereg); prerr_newline();*)
   if (savereg >= 0) then (
     if (get_vitality prepon 32 <= 0) then (
       revive_reg 32 prepon oppon (Code(newreviver) :: tail)
@@ -423,12 +482,11 @@ let rec newreviver prepon oppon tail =
       revive_reg savereg prepon oppon (Code(newreviver) :: tail)
   ) else
     Yield :: Code(newreviver) :: tail
-      
-     
+
 let main_strategy_newreviver prepon oppon tail =
   let continue prepon oppon tail =
     tasks.(0) <- [ Code(newreviver) ];
-    Code (main_strategy) :: tail in
+    Code (main_strategy_strongdbl_zombie) :: tail in
   
   isfree.(32) <- false;
   Code(set_card 32 
