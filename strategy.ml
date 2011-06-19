@@ -396,13 +396,20 @@ let attack_from fromreg toreg prepon oppon tail =
   Code(set_card 1 (S *+ (K *+ (Attack *+ Val fromreg *+ Val (255-toreg)))
 		   *+ Get)) :: Code(continue) :: tail
 
+let zombiecode mydeadreg = 
+    (S*+ (S *+ (S *+ (K *+ (buildrec Inc 5)) *+ (K *+ Val 0))
+	  *+ (S *+ (K *+ (buildrec Inc 5)) *+ (K *+ Val 1)))
+     *+ (S *+ (K *+ (Zombie *+ Val (255 - mydeadreg)))
+	 *+ (S *+ (K *+ Copy) *+ (K *+ Val 64))))
+
 let rec revive_zombie mydeadreg hisdeadreg prepon oppon tail =
   if (get_vitality prepon mydeadreg > 0) then
     Code(attack_from mydeadreg hisdeadreg) :: 
       Code(revive_zombie mydeadreg hisdeadreg) :: tail
   else if (get_vitality oppon hisdeadreg > 320) then
     Code(attack hisdeadreg) :: Code(revive_zombie mydeadreg hisdeadreg) :: tail
-  else if (get_vitality oppon hisdeadreg >= 0) then
+  else if (get_vitality oppon hisdeadreg >= 0
+              || not (get_card oppon hisdeadreg = zombiecode mydeadreg)) then
     Move(AppSC(64, I)) :: Code(revive_zombie mydeadreg hisdeadreg) :: tail
   else
     Yield :: Code(revive_zombie mydeadreg hisdeadreg) :: tail
