@@ -43,8 +43,9 @@ let rec cost_set_number c n =
       if (n == 0) then 2
       else (num_steps (n / 2)) + 1 + (n mod 2) in
 
-    if (i > n) then num_steps n
-    else if (i < n/2) then 1 + cost_set_number_val i (n/2)
+    if (i == n) then 0
+    else if (i > n) then num_steps n
+    else if (i <= n/2) then cost_set_number_val i (n/2) + 1 + (n mod 2)
     else min (n - i) (num_steps n) in
 
   match c with 
@@ -325,8 +326,7 @@ let main_strategy prepon oppon tail =
    Code(double_zombie) :: tail
 
 
-let rec revive prepon oppon tail =
-    let ntail = Code(revive) :: tail in
+let revive_reg reg prepon oppon tail = 
     let rec findbestreg start reg best = 
        if (start == 256) then best else
        let newbest = if not (isfree.(best)) then start
@@ -340,20 +340,23 @@ let rec revive prepon oppon tail =
                 then best else start in
        findbestreg (start+1) reg newbest in
 
-    let revive_reg reg  =
-       let tmpreg = findbestreg 0 reg 0 in
-       List.hd (set_number tmpreg reg 
-                      prepon oppon [Move(AppCS(Revive, tmpreg))]) :: ntail in
+    let tmpreg = findbestreg 0 reg 0 in
+    List.hd (set_number tmpreg reg 
+               prepon oppon [Move(AppCS(Revive, tmpreg))]) :: tail
 
+let revive_step prepon oppon tail =
     let rec reviveloop reg  =
         if (reg == 256) then
-           Yield :: ntail
+           Yield :: tail
         else if (not (isfree.(reg)) && (get_vitality prepon reg <= 0)) then
-           revive_reg reg
+           revive_reg reg prepon oppon tail
         else
            reviveloop (reg+1) in
 
     reviveloop 0
+
+let rec revive prepon oppon tail =
+  revive_step prepon oppon (Code(revive) :: tail)
 
 
 let rec random_apply start cnt prepon oppon tail =
@@ -381,7 +384,58 @@ let defender prepon oppon tail =
    Code(set_card 31 (S *+ (K *+ (Help *+ Val 129 *+ Val 128)) *+ (K *+ Val 200))) ::*)
    Code(random_apply 26 3) :: tail
 
+
+let rec newreviver prepon oppon tail =
+  let rec need_saving i =
+    if (get_vitality prepon i <= 0 && 
+	(i < 20 || not (isfree.(i)))) then
+      i
+    else if (i == 255) then -1 else need_saving (i+1) in
+  
+  let savereg = need_saving 0 in
+  prerr_string ("newreviver " ^ string_of_int savereg); prerr_newline();
+  if (savereg >= 0) then (
+    if (get_vitality prepon 32 <= 0) then (
+      revive_reg 32 prepon oppon (Code(newreviver) :: tail)
+    ) else if (savereg < 70) then (
+      let rec findbestreg start reg best = 
+	if (start == 256) then best else
+	  let newbest = if not (isfree.(best)) then start
+            else if not (isfree.(start)) then best
+            else if (get_vitality prepon start <= 0) then best
+            else if (get_vitality prepon best <= 0) then start
+            else let bestcard = get_card prepon best in
+                let startcard =  get_card prepon start in
+	        if (cost_set_number bestcard reg
+                    <= cost_set_number startcard reg)
+                then best else start in
+	  findbestreg (start+1) reg newbest in
+      
+      let tmpreg = findbestreg 0 32 0 in
+      prerr_string ("tmpreg " ^ string_of_int tmpreg); prerr_newline();
+      let setnum = set_number tmpreg 32 prepon oppon [] in
+      if (setnum = []) then
+	Move(AppCS(Get, tmpreg)) :: Move(AppSC(tmpreg, Val 0)) :: 
+	  Code(newreviver) :: tail
+      else
+	List.hd(setnum) :: Code(newreviver) :: tail
+    ) else
+      revive_reg savereg prepon oppon (Code(newreviver) :: tail)
+  ) else
+    Yield :: Code(newreviver) :: tail
+      
      
+let main_strategy_newreviver prepon oppon tail =
+  let continue prepon oppon tail =
+    tasks.(0) <- [ Code(newreviver) ];
+    Code (main_strategy) :: tail in
+  
+  isfree.(32) <- false;
+  Code(set_card 32 
+	 (S *+ (S *+ (S *+ Revive *+ Inc) *+ Inc)
+          *+ (S *+ (S *+ (K *+ Get) *+ (K *+ Val 32)) *+ Succ))) ::
+    Code(continue) :: tail
+  
 (*
 let inittask = 
    tasks.(3) <- [ Code(defender) ]; 
@@ -389,7 +443,7 @@ let inittask =
 *)
 let inittask = 
    tasks.(0) <- [ Code(revive) ];
-   tasks.(3) <- [ Code(main_strategy) ]; 
+   tasks.(3) <- [ Code(main_strategy_newreviver) ]; 
    tasks
 
 let play_strategy prepon oppon =
