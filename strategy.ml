@@ -205,7 +205,6 @@ let fast_killer_2 = ref dummycode
 
 let rec use_zombie_iter i auxreg prepon oppon tail =
   if (i == 256) then (
-    prerr_string("Start Final Attack"); prerr_newline();prerr_newline();prerr_newline();
     !fast_killer_2 prepon oppon tail
   ) else (
     let v = (get_vitality oppon i) in
@@ -487,7 +486,6 @@ let rec newreviver prepon oppon tail =
 	  findbestreg (start+1) reg newbest in
       
       let tmpreg = findbestreg 0 32 0 in
-      prerr_string ("tmpreg " ^ string_of_int tmpreg); prerr_newline();
       let setnum = set_number tmpreg 32 prepon oppon [] in
       if (setnum = []) then
 	Move(AppCS(Get, tmpreg)) :: Move(AppSC(tmpreg, Val 0)) :: 
@@ -534,7 +532,6 @@ let fast_killer prepon oppon tail =
       Code(loop) :: tail in
 
   let finalattack prepon oppon tail = 
-    prerr_string("Final Attack"); prerr_newline();prerr_newline();prerr_newline();
     tasks.(1) <- [];
     Code(set_card c (S *+ (buildrec Inc 8)
 		     *+ (S *+ (S *+ (K *+ Copy) *+ (K *+ Val c)) *+ Succ))) ::
