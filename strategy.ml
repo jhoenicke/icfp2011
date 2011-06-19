@@ -504,25 +504,24 @@ let main_strategy_newreviver prepon oppon tail =
 let fast_killer prepon oppon tail =
   let tmpreg = alloc_reg () in
   let t3 = alloc_reg () in
-  let t2 = alloc_reg () in
   let c = 1 in
   let rec loop prepon oppon tail = 
     Code(set_card 0 (Val 0)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 32)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 64)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 128)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 96)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 192)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 160)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(set_card 0 (Val 135)) ::
-      Move(AppSC(t2, Val 0)) ::
+      Move(AppSC(tmpreg, Val 0)) ::
       Code(loop) :: tail in
   
   Code(set_card 0 (Val 2)) ::
@@ -537,17 +536,16 @@ let fast_killer prepon oppon tail =
     Code(set_card tmpreg (S *+ (S *+ (S *+ (buildrec Dec 10) *+ Zombie)
 				*+ (K *+ (S *+ (S *+ (K *+ Copy) *+ (K *+ Val t3)) *+ I)))
 			  *+ (S *+ (K *+ Get) *+ (K *+ Val tmpreg)))) ::
-    Code(set_card t2 (Get *+ Val tmpreg)) ::
     Code(set_card t3 (S *+ (S *+ (K *+ Copy) *+ (K *+ Val c))
 		      *+ (S *+ (K *+ Copy) *+ (K *+ Val 0)))) ::
     Code(set_card 0 (Val 0)) ::
-    Move(AppSC(t2, Val 0)) ::
+    Move(AppSC(tmpreg, Val 0)) ::
     Code(set_card 0 (Val 70)) ::
-    Move(AppSC(t2, Val 0)) ::
+    Move(AppSC(tmpreg, Val 0)) ::
     Code(set_card 0 (Val 140)) ::
-    Move(AppSC(t2, Val 0)) ::
+    Move(AppSC(tmpreg, Val 0)) ::
     Code(set_card 0 (Val 210)) ::
-    Move(AppSC(t2, Val 0)) ::
+    Move(AppSC(tmpreg, Val 0)) ::
     Code(set_card c (S *+ (buildrec Inc 5)
 		     *+ (S *+ (S *+ (K *+ Copy) *+ (K *+ Val c)) *+ Succ))) ::
     Code(loop) :: tail
