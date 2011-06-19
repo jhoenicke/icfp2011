@@ -41,3 +41,15 @@ Possible defenses:
 The Strategies module should also make it easy to program new strategies.
 To execute a complicated command it is enough to use the task
  Code(set_card 1 (complicated command))
+
+
+In the last minute I tried a different simpler but highly successful
+strategy: We try to install a zombie as fast as possible that drains
+all the life points from the slots of the opponent.  It does this by
+repeatedly invoking help with 8192 points on all slots until the
+function apply limit of 1000 is reached.  If the opponent does not
+react fast enough it will successful kill him in only 207 turns.
+However, this simple strategy can easily be defeated.  Most
+importantly, the help command will abort if there are not enough
+health points, so if the opponent spent two much health points on his
+register 0, the first attack will not work.

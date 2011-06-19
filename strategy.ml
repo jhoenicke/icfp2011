@@ -546,9 +546,9 @@ let fast_killer prepon oppon tail =
     Move(AppSC(tmpreg, Val 0)) ::
     Code(set_card 0 (Val 210)) ::
     Move(AppSC(tmpreg, Val 0)) ::
-    Code(set_card c (S *+ (buildrec Inc 5)
+    Code(set_card c (S *+ (buildrec Inc 8)
 		     *+ (S *+ (S *+ (K *+ Copy) *+ (K *+ Val c)) *+ Succ))) ::
-    Code(loop) :: tail
+    Code(main_strategy_newreviver) :: tail
     
 (*
 let inittask = 
