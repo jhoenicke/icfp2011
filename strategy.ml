@@ -194,26 +194,35 @@ let rec install_zombie installer reg card prepon oppon tail =
 let compvital vital = 
   let rec approx start =
     if (2 * start <= vital) then (approx (2*start))
-    else if (start * 19/10 > vital+100) then start
+    else if (start * 19/10 >= vital) then start
     else (start * 3 / 2) in
   approx 1
 
+let dummycode (prepon : slots) (oppon : slots) (tail : task list) =
+  tail
+
+let fast_killer_2 = ref dummycode
+
 let rec use_zombie_iter i auxreg prepon oppon tail =
-  let v = (get_vitality oppon i) in
-  if (v <= 0) then
-    use_zombie_iter ((i+1) mod 256) auxreg prepon oppon tail
-  else (
-    let vital = compvital v in
-    let tmp = alloc_reg() in
-    Code(set_number 0 i) ::
-      Code(set_number 1 vital) ::
-      Code(set_card tmp (Get *+ Val auxreg)) ::
-      Move(AppSC(tmp, Val 0)) ::
-      Code(free_reg tmp) ::
-      Code(use_zombie_iter i auxreg) :: tail
+  if (i == 256) then (
+    prerr_string("Start Final Attack"); prerr_newline();prerr_newline();prerr_newline();
+    !fast_killer_2 prepon oppon tail
+  ) else (
+    let v = (get_vitality oppon i) in
+    if (v <= 0) then
+      use_zombie_iter (i+1) auxreg prepon oppon tail
+    else (
+      let vital = compvital v in
+      let tmp = alloc_reg() in
+      Code(set_number 0 i) ::
+	Code(set_number 1 vital) ::
+	Code(set_card tmp (Get *+ Val auxreg)) ::
+	Move(AppSC(tmp, Val 0)) ::
+	Code(free_reg tmp) ::
+	Code(use_zombie_iter i auxreg) :: tail
+    )
   )
-
-
+    
 
 let rec use_zombie installer zombiereg auxreg prepon oppon tail = 
   if (get_vitality oppon zombiereg > 1000) then
@@ -523,6 +532,14 @@ let fast_killer prepon oppon tail =
       Code(set_card 0 (Val 135)) ::
       Move(AppSC(tmpreg, Val 0)) ::
       Code(loop) :: tail in
+
+  let finalattack prepon oppon tail = 
+    prerr_string("Final Attack"); prerr_newline();prerr_newline();prerr_newline();
+    tasks.(1) <- [];
+    Code(set_card c (S *+ (buildrec Inc 8)
+		     *+ (S *+ (S *+ (K *+ Copy) *+ (K *+ Val c)) *+ Succ))) ::
+      Code(loop) :: tail in
+  fast_killer_2 := finalattack;
   
   Code(set_card 0 (Val 2)) ::
     Code(set_card 1 (App(App(Attack, App(Get, Val 0)), Val 0))) ::
@@ -546,8 +563,6 @@ let fast_killer prepon oppon tail =
     Move(AppSC(tmpreg, Val 0)) ::
     Code(set_card 0 (Val 210)) ::
     Move(AppSC(tmpreg, Val 0)) ::
-    Code(set_card c (S *+ (buildrec Inc 8)
-		     *+ (S *+ (S *+ (K *+ Copy) *+ (K *+ Val c)) *+ Succ))) ::
     Code(main_strategy_newreviver) :: tail
     
 (*

@@ -9,39 +9,42 @@ The code is in three modules:
 
 The strategy is implemented as priority based task queues.  A task is
 a list of instructions, which can be simple moves or arbitrary ocaml code.
+We implement several strategies.
 
-On the task queue with the highest priority sits the reviver task.  It 
-checks if there is a dead register that is in use and revives it.  This is
-done by getting an arbitrary free register and reviving it.
+Revive
+======
 
-The main task proceeds as follows:
-  1. attack slot 255 of opponent to get a place to put a zombie.
-  2. put a zombie into this slot.
-     the zombie will first kill register 0 (with the help command)
-     then it installs a ping-pong zombie in my slots, that will 
-     automatically reinstall a zombie.  The zombie keeps register 0 dead.
-  3. Install a watchdog that checks if the ping-pong zombie dies for some 
-     reason and reinstalls it.
-  4. Kill all other slots of the opponent one by one.  This is done by
-     another zombie that uses the help command.
+When a used slot is killed the slot is revived by putting its number in
+an arbitrary free and living slot and invoking revive on it.
+
+Ping-Pong Zombie
+================
+
+We try to install a zombie process that will install a zombie process in
+our slots to keep itself running. This way we can concentrate on other 
+things and the zombie process will keep the most important registers of
+the opponent low.
+
+When the zombie is killed by the opponent, we will try to reinstall it
+immediately.
+
+One-by-One slot attack
+======================
+
+We attack every slot one-by one.  For this we determine the health and
+build a zombie that helps the slot with itself.  This will usually kill
+the slot immediately.
+
+Advanced Reviver
+================
+
+Instead of reviving every slot one by one, we create in the beginning
+a short program that revives and increments as many slots as fit in
+the 1000 apply limit.
 
 
-The core feature is the ping-pong zombie:  The zombie does (inc 0) to keep
-that register dead, then installs a zombie in my slots that installs the
-zombie back. This way the zombie will keep itself running and my program
-is free to do other evil things.
-
-Possible defenses:
-  - prevent that the zombie is installed in the first place (hard but doable)
-  - revive slot 0 and immediately do a help on it by a single command
-    (possible, but needs advanced operations to build a complicated command
-     without register 0).
-
-
-The Strategies module should also make it easy to program new strategies.
-To execute a complicated command it is enough to use the task
- Code(set_card 1 (complicated command))
-
+Quick Attack
+============
 
 In the last minute I tried a different simpler but highly successful
 strategy: We try to install a zombie as fast as possible that drains
@@ -53,3 +56,17 @@ However, this simple strategy can easily be defeated.  Most
 importantly, the help command will abort if there are not enough
 health points, so if the opponent spent two much health points on his
 register 0, the first attack will not work.
+
+
+Full Strategy:
+==============
+ 1. Quick Attack
+     if the opponent does not react, this succeeds in 207 turns.
+ 2. Prepare Advanced Revival
+     in case the opponent does something nasty.
+ 3. Install Ping-Pong Zombie
+ 4. One-by-one Slot Attack
+ 5. Quick Decrement Attack
+
+Now the strategy is to first do a quick attack as in the paragraph
+above, then install the advanced reviver
