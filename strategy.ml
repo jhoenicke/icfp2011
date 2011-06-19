@@ -194,15 +194,37 @@ let compvital vital =
     else (start * 3 / 2) in
   approx 1
 
-let rec use_zombie installer s zombiereg auxreg prepon oppon tail = 
-  let vital = compvital (get_vitality oppon s) in
-  let codereg = alloc_reg () in
-  Code(set_card codereg 
-         (S *+ (K *+ (Help *+ Val s *+ Val s))
-          *+ (K *+ (Val vital)))) ::
-    Code(install_zombie installer zombiereg (Get *+ Val codereg)) ::
-    Code(free_reg codereg) ::
-    Code(use_zombie installer ((s+1) mod 256) zombiereg auxreg) :: tail
+let rec use_zombie_iter i auxreg prepon oppon tail =
+  let v = (get_vitality oppon i) in
+  if (v <= 0) then
+    use_zombie_iter ((i+1) mod 256) auxreg prepon oppon tail
+  else (
+    let vital = compvital v in
+    let tmp = alloc_reg() in
+    Code(set_number 0 i) ::
+      Code(set_number 1 vital) ::
+      Code(set_card tmp (Get *+ Val auxreg)) ::
+      Move(AppSC(tmp, Val 0)) ::
+      Code(free_reg tmp) ::
+      Code(use_zombie_iter i auxreg) :: tail
+  )
+
+
+
+let rec use_zombie installer zombiereg auxreg prepon oppon tail = 
+  if (get_vitality oppon zombiereg > 1000) then
+    Code(attack zombiereg) :: 
+      Code(use_zombie installer zombiereg auxreg) :: tail
+  else
+  let help00 = (S *+ (K *+ (S *+ Help *+ I)) *+ Get) in
+  let get1 = (S *+ (K *+ Get) *+ Succ) in
+  let app1 (c, v) = (S *+ (K *+ c) *+ v) in
+  let app2 (v, c) = (S *+ v *+ (K *+ c)) in
+  let app3 (v1, v2) = (S *+ v1 *+ v2) in
+  let zombie = app3(app1(S, app1(K,help00)), app1(K,get1)) in
+  Code(set_card auxreg
+	 (app2(app1(Get *+ Val installer, zombie), Val (255-zombiereg)))) ::
+    Code(use_zombie_iter 0 auxreg) :: tail
 
 let rec watch_double_zombie installer hisdead codereg prepon oppon tail = 
   if (get_vitality oppon hisdead < 0) then 
@@ -231,7 +253,7 @@ let start_watcher installer hisdead codereg prepon oppon tail =
 let phase4 installer prepon oppon tail =
   let auxreg = alloc_reg () in
   let hisdead = 254 in
-  Code(use_zombie installer 1 hisdead auxreg)::tail
+  Code(use_zombie installer hisdead auxreg)::tail
 
 let phase3 installer hisdeadreg backzombie prepon oppon tail =
   Code(start_watcher installer hisdeadreg backzombie)
