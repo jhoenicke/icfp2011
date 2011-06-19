@@ -95,7 +95,7 @@ let rec set_card r c prepon oppon tail =
    | App (c1, c2) -> 
          if is_simple_card c1 then
              set_card r c2 prepon oppon (Move(AppCS(c1, r)) :: tail)
-         else if r != 0 || is_binary_card c2 then
+         else if r != 0 || is_simple_card c2 || is_binary_card c2 then
              set_card r c1 prepon oppon (Code(apply_card r c2) :: tail)
          else let newr = alloc_reg () in
              Code(set_card newr c) :: Code(set_card 0 (Get *+ Val newr)) :: 
@@ -153,12 +153,16 @@ let attack reg prepon oppon tail =
   let vitality = findvitality 1 (get_vitality prepon srcreg) (get_vitality oppon reg) in
   Code(set_card 0 (Attack *+ Val srcreg *+ Val (255-reg) *+ Val vitality)) ::
     tail
+
+let double_dec reg prepon oppon tail =
+  Code(set_card 0 (Get *+ Val reg)) :: 
+    Move(AppCS(S, reg)) :: Code(apply_card reg (Get *+ Val 0)) :: tail
   
 let rec install_zombie installer reg card prepon oppon tail =
   let rec retry_zombie tmp prepon oppon tail = 
-    if (get_vitality oppon reg <= 6) then
+    if (get_vitality oppon reg < 320) then
       Move(AppSC(tmp, Val  0)) :: tail
-    else if (get_vitality oppon reg > 24) then (
+    else if (get_vitality oppon reg > 1000) then (
       isfree.(tmp) <- true; 
       install_zombie installer reg card prepon oppon tail
     ) else
@@ -166,7 +170,7 @@ let rec install_zombie installer reg card prepon oppon tail =
       Move(AppSC(1, Val 0)) :: Code(retry_zombie tmp) :: tail in
   
   
-  if (get_vitality oppon reg > 24) then
+  if (get_vitality oppon reg > 1000) then
     Code(attack reg) :: Code(install_zombie installer reg card) :: tail
   else (
     let t1 = alloc_reg () in
@@ -190,25 +194,25 @@ let compvital vital =
     else (start * 3 / 2) in
   approx 1
 
-let rec use_zombie installer s zombiereg prepon oppon tail = 
-   let vital = compvital (get_vitality oppon s) in
-   let codereg = alloc_reg () in
-   Code(set_card codereg 
-          (S *+ (K *+ (Help *+ Val s *+ Val s))
-             *+ (K *+ (Val vital)))) ::
-     Code(install_zombie installer zombiereg (Get *+ Val codereg)) ::
-     Code(free_reg codereg) ::
-     Code(use_zombie installer ((s+1) mod 256) zombiereg) :: tail
+let rec use_zombie installer s zombiereg auxreg prepon oppon tail = 
+  let vital = compvital (get_vitality oppon s) in
+  let codereg = alloc_reg () in
+  Code(set_card codereg 
+         (S *+ (K *+ (Help *+ Val s *+ Val s))
+          *+ (K *+ (Val vital)))) ::
+    Code(install_zombie installer zombiereg (Get *+ Val codereg)) ::
+    Code(free_reg codereg) ::
+    Code(use_zombie installer ((s+1) mod 256) zombiereg auxreg) :: tail
 
 let rec watch_double_zombie installer hisdead codereg prepon oppon tail = 
   if (get_vitality oppon hisdead < 0) then 
     Yield :: Code(watch_double_zombie installer hisdead codereg) :: tail
   else (
-    prerr_string ("reinstall double zombie " ^ 
+    (*prerr_string ("reinstall double zombie " ^ 
                   string_of_int installer ^ " " ^
                   string_of_int hisdead ^ " " ^
                   string_of_int codereg); prerr_newline ();
-    prerr_slots oppon;
+    prerr_slots oppon;*)
     let t1 = alloc_reg() in
     let t2 = alloc_reg() in
     Code(set_card t1 (Get *+ Val 0))::
@@ -224,33 +228,57 @@ let rec watch_double_zombie installer hisdead codereg prepon oppon tail =
 let start_watcher installer hisdead codereg prepon oppon tail =
   tasks.(1) <- [Code(watch_double_zombie installer hisdead codereg)]; tail
 
+let phase4 installer prepon oppon tail =
+  let auxreg = alloc_reg () in
+  let hisdead = 254 in
+  Code(use_zombie installer 1 hisdead auxreg)::tail
+
+let phase3 installer hisdeadreg backzombie prepon oppon tail =
+  Code(start_watcher installer hisdeadreg backzombie)
+  :: Code(phase4 installer) :: tail
+
+let phase2 installer hisdeadreg zombiereg backzombie prepon oppon tail =
+  let rec buildrec card n = if (n == 1) then card else
+      (S *+ (buildrec card (n - 1)) *+ card) in
+  Code(set_card installer (buildrec Dec 10)) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Code(double_dec installer) ::
+    Move(AppCS(S, installer)) ::
+    Move(AppCS(K, installer)) ::
+    Move(AppCS(S, installer)) ::
+    Code(apply_card installer (S *+ (K *+ (S *+ Zombie)) *+ K)) ::
+    Code(phase3 installer hisdeadreg backzombie) :: tail
+
 let double_zombie prepon oppon tail =
    let zombiereg  = alloc_reg () in
    let zombieinstaller = alloc_reg () in
    let backzombie = alloc_reg () in
    let mydeadreg  = find_dead_reg prepon 1 0 in
+   let tmpreg = alloc_reg() in
    let hisdeadreg = 255 in
 
-   Code(set_card backzombie
-        (S *+ (K *+ (Zombie *+ Val (255 - mydeadreg)))
-           *+ (S *+ (K *+ Copy) *+ (K *+ Val zombiereg)))) ::
-   Code(set_card zombiereg
-        (S *+ (K *+ (Zombie *+ Val (255-hisdeadreg)))
-           *+ (K *+ (S *+ (S *+ (K *+ Inc) *+ (K *+ Val 0))
+   Code(set_card tmpreg (S *+ Inc *+ Inc)) ::
+     Code(double_dec tmpreg) ::
+     Move(AppCS(K,tmpreg)) :: Move(AppCS(S,tmpreg)) ::
+     Code(set_card backzombie
+            (S *+ (K *+ (Zombie *+ Val (255 - mydeadreg)))
+             *+ (S *+ (K *+ Copy) *+ (K *+ Val zombiereg)))) ::
+     Code(set_card zombiereg
+            (S *+ (K *+ (Zombie *+ Val (255-hisdeadreg)))
+             *+ (K *+ (S *+ (S *+ (Get *+ Val tmpreg *+ (K *+ Val 0))
+                               *+ (Get *+ Val tmpreg *+ (K *+ Val 1)))
                        *+ (Get *+ Val backzombie))))) ::
+     Code(free_reg tmpreg) ::
    let attack prepon oppon tail =
      let vital = get_vitality oppon 0 in
-     let snd_zombiereg = 254 in
        Code(set_card 1  (Zombie *+ Val (255-hisdeadreg) *+
                         (S *+ (S *+ (K *+ (Help *+ Val 0 *+ Val 0))
                                  *+ (K *+ Val (compvital vital)))
                            *+ (Get *+ Val backzombie)))) ::
-       Code(set_card zombieinstaller 
-	    (S *+ (K *+ (S *+ (S *+ (S *+ Dec *+ Dec) 
-		     *+ (S *+ (S *+ Dec *+ Dec) *+ (S *+ Dec *+ Dec)))))
-             *+ (S *+ (K *+ (S *+ Zombie)) *+ K)))
-       :: Code(start_watcher zombieinstaller hisdeadreg backzombie)
-       :: Code(use_zombie zombieinstaller 1 snd_zombiereg) :: tail in
+       Code(phase2 zombieinstaller hisdeadreg zombiereg backzombie) :: tail in
 	    
    let myvital = get_vitality prepon mydeadreg in
    if (myvital > 0) then
