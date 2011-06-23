@@ -17,7 +17,7 @@ import Control.Monad
 infixl 1 :$
 
 data Card
-   = Val !Integer    -- number
+   = Val !Int    -- number
    | !Card :$ !Card   -- card application
    | I | Succ | Dbl | Get | Put | S | K
    | Inc | Dec | Attack | Help
@@ -71,7 +71,6 @@ readsCard s = [ (card, x) | (token, s') <- lex s,
                             (card,x) <- let card1 = readSimpleCard token in
                                             readsArgsOfCard card1 s' ]
 
-
 instance Read Card where
    readsPrec _ = readsCard
 
@@ -80,9 +79,8 @@ instance Read Card where
 ---------------------
 
 type SlotsA a = (a Int Int, a Int Card)
-type Slots = (Array Int Int, Array Int Card)
-type IOSlots = (IOArray Int Int, IOArray Int Card)
--- type STSlots s = (STArray s Int Int, STArray s Int Card)
+type Slots = SlotsA Array
+type IOSlots = SlotsA IOArray
 
 data Move = MoveSC !Int !Card | MoveCS !Card !Int
    deriving (Eq, Show, Read)
@@ -93,10 +91,10 @@ createSlotsM = do
   cards <- newArray (0,255) I
   return (vits, cards)
 
-lookupCardI slots slotnr = snd slots Data.Array.IArray.! slotnr
+lookupCardI slots slotnr = snd slots ! slotnr
 lookupCardM slots slotnr = readArray (snd slots) slotnr
 
-lookupVitalityI slots slotnr = fst slots Data.Array.IArray.! slotnr
+lookupVitalityI slots slotnr = fst slots ! slotnr
 lookupVitalityM slots slotnr = readArray (fst slots) slotnr
 
 writeCardM slots slotnr card = 
@@ -107,12 +105,11 @@ writeZombieM slots slotnr card = do
   writeCardM slots slotnr card
   writeVitalityM slots slotnr (-1)
 
-freezeSlots :: IOSlots -> IO (Slots)
+freezeSlots :: IOSlots -> IO Slots
 freezeSlots slots = do
   vits <- freeze $ fst slots 
   cards <- freeze $ snd slots
   return (vits,cards)
-  
 
 ---------------------
 -- Applying Cards
@@ -121,7 +118,7 @@ freezeSlots slots = do
 data ApplyException = ApplyLimitException
                     | ApplyIntegerException
                     | NotNumericException
-                    | InvalidSlotException Integer
+                    | InvalidSlotException Int
                     | NotEnoughVitalityException
                     | DeadSlotException Int
                     deriving (Show, Typeable)
@@ -134,12 +131,15 @@ applyCard isZombie func arg my his = do
   let incAndCheck 1000 = throw ApplyLimitException
       incAndCheck c = c + 1
       
-      getCardValue (Val n) = n
+      getCardValue (Val n) = return n
       getCardValue _ = throw NotNumericException
       
-      getCardSlot (Val n) | n >= 0 && n <= 256 = fromInteger n
+      getCardSlot (Val n) | n >= 0 && n < 256 = return n
       getCardSlot (Val n) = throw $ InvalidSlotException n
       getCardSlot _ = throw NotNumericException
+      getOtherCardSlot arg = do 
+        slot <- getCardSlot arg
+        return $ 255 - slot
       
       limit vit 
         | vit < 0 = 0
@@ -160,47 +160,57 @@ applyCard isZombie func arg my his = do
           K :$ x -> return x
           I      -> return arg
           Val n  -> throw ApplyIntegerException
-          Succ   -> return $ Val $ getCardValue arg + 1
-          Dbl    -> return $ Val $ getCardValue arg * 2
-          Get    -> let slot = getCardSlot arg in do
+          Succ   -> do n <- getCardValue arg; return $ Val $ limit $ n + 1
+          Dbl    -> do n <- getCardValue arg; return $ Val $ limit $ 2 * n
+          Get    -> do
+            slot <- getCardSlot arg
             vit <- lookupVitalityM my slot
-            when (vit < 0) $ throw $ DeadSlotException slot
+            when (vit <= 0) $ throw $ DeadSlotException slot
             lookupCardM my slot
           Put    -> return I
-          Copy   -> do result <- lookupCardM his $ getCardSlot arg
-                       return result
-          Inc    -> let slot = getCardSlot arg in do
+          Copy   -> do 
+            slot <- getCardSlot arg
+            result <- lookupCardM his $ slot
+            return result
+          Inc    -> do
+            slot <- getCardSlot arg
             vitality <- lookupVitalityM my slot
             writeVitalityM my slot (zombieAdd vitality 1)
             return I
-          Dec    -> let slot = getCardSlot arg in do
+          Dec    -> do
+            slot <- getOtherCardSlot arg
             vitality <- lookupVitalityM his slot
             writeVitalityM his slot (zombieAdd vitality (-1))
             return I
-          Help :$ x :$ y -> let fromslot = getCardSlot x 
-                                toslot   = getCardSlot y
-                                vit      = getCardSlot arg in do
+          Help :$ x :$ y -> do            
+            fromslot <- getCardSlot x
+            vit <- getCardValue arg
             fromvit <- lookupVitalityM my fromslot
             when (fromvit < vit) $ throw NotEnoughVitalityException
             writeVitalityM my fromslot (fromvit - vit)
+            toslot <- getCardSlot y
             vitality <- lookupVitalityM my toslot
             writeVitalityM my toslot (zombieAdd vitality $ (vit*11 `div` 10))
             return I
-          Attack :$ x :$ y -> let fromslot = getCardSlot x 
-                                  toslot   = getCardSlot y
-                                  vit      = getCardSlot arg in do
+          Attack :$ x :$ y -> do
+            fromslot <- getCardSlot x
+            vit <- getCardValue arg
             fromvit <- lookupVitalityM my fromslot
             when (fromvit < vit) $ throw NotEnoughVitalityException 
             writeVitalityM my fromslot (fromvit - vit)
+            toslot <- getOtherCardSlot y
             vitality <- lookupVitalityM his toslot
             writeVitalityM his toslot (zombieAdd vitality $ -(vit*9 `div` 10))
             return I
-          Revive -> let slot = getCardSlot arg in do
+          Revive -> do
+            slot <- getCardSlot arg
             vitality <- lookupVitalityM my slot
-            when (vitality < 0) $ writeVitalityM my slot 1
+            when (vitality <= 0) $ writeVitalityM my slot 1
             return I
-          Zombie :$ x -> let slot = getCardSlot x in do
+          Zombie :$ x -> do
+            slot <- getOtherCardSlot x
             vitality <- lookupVitalityM my slot
-            when (vitality < 0) $ writeZombieM my slot arg
+            when (vitality <= 0) $ writeZombieM my slot arg
             return I
+          _ -> return $ func :$ arg
   apply func arg
