@@ -88,6 +88,10 @@ module Engine = struct
 
   let apply_cards prepon oppon func arg isZombie =
     let counter = ref 0 in
+    let parsenum = function Val n -> n | _ -> raise ApplyError in
+    let parseslot c = let n = parsenum c in
+		      if (n < 0 || n > 256) then raise ApplyError else n in
+    let zombie v = if isZombie then -v else v
     let limit_vitality v =
        if v < 0 then 0 else if v > 65535 then 65535 else v in
 
@@ -105,48 +109,27 @@ module Engine = struct
       | App (K, x)     -> x
       | I              -> arg
       | Val n          -> raise ApplyError
-      | Succ           -> 
-          (match arg with 
-             Val n -> Val (n+1) 
-           | _ -> raise ApplyError)
-      | Dbl            -> 
-          (match arg with 
-             Val n -> Val (2*n) 
-           | _ -> raise ApplyError)
-      | Get            -> 
-          (match arg with 
-             Val n ->  if (n < 0 || n > 255
-                           || get_vitality prepon n <= 0) then raise ApplyError
-                       else get_card prepon n
-           | _ -> raise ApplyError)
+      | Succ           -> Val (parsenum arg + 1)
+      | Dbl            -> Val (parsenum arg * 2)
+      | Get            -> let n = parseslot arg in
+			  if get_vitality prepon n <= 0 then raise ApplyError
+			  else get_card prepon n
       | Put            -> I
-      | Copy           ->
-          (match arg with 
-             Val n ->  if (n < 0 || n > 255) then raise ApplyError
-                       else get_card oppon n
-           | _ -> raise ApplyError)
-      | Inc           ->
-          (match arg with 
-             Val n -> if (n < 0 || n > 255) then raise ApplyError
-                       else (let oldval = get_vitality prepon n in
-                         if oldval <= 0 then ()
-                         else let newval = limit_vitality
-				(if isZombie then oldval - 1 else oldval + 1) 
-			      in
-			      set_vitality prepon n (newval)
-		       ); I
-           | _ -> raise ApplyError)
-      | Dec           ->
-          (match arg with 
-             Val n ->  if (n < 0 || n > 255) then raise ApplyError
-                       else ( let oldval = get_vitality oppon (255-n) in
-                         if oldval <= 0 then ()
-                         else let newval = limit_vitality
-				(if isZombie then oldval + 1 else oldval - 1) 
-			      in
-			      set_vitality oppon (255-n) (newval)
-		       ); I
-           | _ -> raise ApplyError)
+      | Copy           -> get_card oppon (parseslot arg)
+      | Inc            -> let slot = parseslot arg in
+			  let oldval = get_vitality prepon n in
+			  if oldval <= 0 then ()
+			  else (
+			    set_vitality prepon 
+			      (limit_vitality (oldval + zombie 1))
+			  ); I
+      | Dec            -> let slot = parseslot arg in
+			  let oldval = get_vitality oppon n in
+			  if oldval <= 0 then ()
+			  else (
+			    set_vitality oppon 
+			      (limit_vitality (oldval + zombie (-1)))
+			  ); I
       | App (App (Attack, argi), argj) ->
           (match argi,arg with 
              Val i, Val n ->  
