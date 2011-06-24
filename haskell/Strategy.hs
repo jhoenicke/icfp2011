@@ -2,6 +2,7 @@ module Strategy where
 import Engine
 import Control.Monad
 import Debug.Trace
+import Lambda (lambdaCard)
 
 data Player = Me | Him
 data Action = MoveAction Move 
@@ -105,6 +106,56 @@ applySC slot (c1 :$ c2) =
      applySC slot c2
 applySC slot card = playMove $ MoveSC slot card
 
+-- compute for card and given free list, the costs for
+--   a : applying card to a slot, allowing use of slot 0 and free list
+--   a0: applying card to a slot, not allowing use of slot 0
+--   s : setting card to a slot, allowing use of slot 0 and free list
+--   s0: setting card to slot 0, not allowing use of slot 0
+-- and return the tuple (a,a0,s,s0)
+costsSetApply :: Int -> [Int] -> Card -> (Int, Int, Int, Int)
+costsSetApply slot free (c1 :$ c2) = (a, a0, s, s0)
+  where (a1,a01,s1,s01) = costsSetApply slot free c1
+        (a2,a02,s2,s02) = costsSetApply slot free c2
+        s  = if isSimpleCard c1 then s2  + 1 else s1  + a2
+        s0 = if isSimpleCard c1 then s02 + 1 else s01 + a02
+        a  = minimum [a1 + a2 + 2, s + num + 7, s0 + 4]
+        a0 = a01 + a02 + 2
+        num = 3
+costsSetApply slot free (Val n) = 
+  (min (3*steps + 1) (steps+6), 3*steps + 1, steps + 2, steps + 2)
+  where steps = costSetNumber zero n
+costsSetApply slot free _ = (1,1,2,2)
+
+applySCR :: [Int] -> Int -> Card -> Strategy()
+applySCR freeRegs slot (Val n) | n > 0 = applySCR freeRegs slot $ valToApp n
+applySCR freeRegs slot c@(c1 :$ c2)
+  | freeRegs /= []
+    && s + num + 7 < a1 + a2 + 2
+    && s + num + 7 < s0 + 4 =
+      do trace ("applySC "++show slot++" "++show c++" costs "
+                ++show(a1+a2+2)++","++show(s0+4)++",!"++show(s+num+7))$
+           setCardR (tail freeRegs) (head freeRegs) c
+         setCard 0 $ get (head freeRegs)
+         applySC slot $ get 0
+  | s0 + 4 < a1 + a2 + 2 =
+      do trace ("applySC "++show slot++" "++show c++" costs "
+                ++show(a1+a2+2)++",!"++show(s0+4)++","++show(s+num+7))$
+           setCard 0 c
+         applySC slot $ get 0
+  | otherwise =
+      do trace ("applySC "++show slot++" "++show c++" costs !"
+                ++show(a1+a2+2)++","++show(s0+4)++","++show(s+num+7))$
+           applyCS K slot
+         applyCS S slot
+         applySCR freeRegs slot c1
+         applySCR freeRegs slot c2
+  where (a1,a01,s1,s01) = costsSetApply slot freeRegs c1
+        (a2,a02,s2,s02) = costsSetApply slot freeRegs c2
+        s  = if isSimpleCard c1 then s2  + 1 else s1  + a2
+        s0 = if isSimpleCard c1 then s02 + 1 else s01 + a02
+        num = 3
+applySCR _ slot card = applySC slot card
+
 setCard :: Int -> Card -> Strategy()
 setCard slot (Val n) = setNumber slot n
 setCard slot (c1 :$ c2)
@@ -119,6 +170,22 @@ setCard slot c = do
    when (card /= c) $ case card of
      I -> applySC slot c
      _ -> do { applyCS Put slot ; setCard slot c }
+     
+setCardR :: [Int] -> Int -> Card -> Strategy()
+setCardR _ slot (Val n) = setNumber slot n
+setCardR freeRegs slot (c1 :$ c2)
+  | isSimpleCard c1 =
+    do setCardR freeRegs slot c2
+       applyCS c1 slot
+  | otherwise = 
+    do setCardR freeRegs slot c1
+       applySCR freeRegs slot c2
+setCardR _ slot c = do
+   card <- getCard Me slot
+   when (card /= c) $ case card of
+     I -> applySC slot c
+     _ -> do { applyCS Put slot ; setCard slot c }
+
 
 reviveRegister reg = do
   let isfree x = return $ x > 5
@@ -141,7 +208,7 @@ reviveRegister reg = do
                 | otherwise          -> (y, freey, costy)
               
   vit  <- getVitality Me reg
-  trace ("Check Reg " ++ show reg ++ ": " ++ show vit) $ return ()
+  -- trace ("Check Reg " ++ show reg ++ ": " ++ show vit) $ return ()
   when (vit <= 0) $ do
     trace ("Revive Reg " ++ (show reg)) $ return ()
     (usereg,_,_) <- foldM chooseBest (0,False,100) [0..255]
@@ -149,41 +216,25 @@ reviveRegister reg = do
     applyCS Revive usereg
 
 reviver = do 
-  trace "Reviver" $ firstAction (forM_ [0..5] reviveRegister)
-  trace "Recurse" $ reviver
+  firstAction (forM_ [0..5] reviveRegister)
+  reviver
 
 mainStrategy :: Strategy ()
 mainStrategy = do
-  let c = 3
-      d = 0
-      e = 1
   startThread 1 $ reviver
-  setCard 1 $ Attack :$ zero :$ zero
-  setCard 2 $ Attack :$ (Succ :$ zero) :$ zero
-  setCard 0 $ Val (6*1024)
-  applySC 1 $ get 0
-  applySC 2 $ get 0
-  applyCS K 0
-  setCard c $ S :$ s (s Help I) (get 0) 
-  setCard 0 $ s (s (k Copy) (k (val c))) Succ
-  applySC c $ get 0
-  setCard 0 $ k (s (s (k Copy) (k (val e))) I)
-  -- setCard 2 $ S :$ (s (s (buildrec Dec 10) Zombie) (get 0))
-  setCard 2 $ S :$ (s Zombie (get 0))
-  setCard 0 $ s (k Get) (k (Val 2))
-  applySC 2 $ get 0
-  setCard 0 $ k (Val c)
-  setCard e $ S :$ (s (k Copy) (get 0)) 
-  setCard 0 $ (s (k Copy) (k (Val d)))
-  applySC e $ get 0
+  setCardR [] 2 $ lambdaCard "attack 0 0 6144"
+  setCardR [] 2 $ lambdaCard "attack 1 0 (get 0)"
+  setCardR [1,2] 3 $ lambdaCard "%x help x x 6144 ((?x copy 3) (succ x))"
+  setCardR [1,4] 2 $ lambdaCard "%x (zombie x %y (?y copy 1) y) (?x get 2)"
+  setCardR [4]   1 $ lambdaCard "%y (get 3) (?y copy 0)"
   let loop = 
-        do setCard d (Val 0)
+        do setCard 0 (Val 0)
            applySC 2 zero
-           setCard d (Val 70)
+           setCard 0 (Val 70)
            applySC 2 zero
-           setCard d (Val 140)
+           setCard 0 (Val 140)
            applySC 2 zero
-           setCard d (Val 210)
+           setCard 0 (Val 210)
            applySC 2 zero
            loop
   loop
@@ -206,6 +257,30 @@ strategy strat my his =
         case runStrategy head my his of
           StratRet _ -> execute tail
           StratCont action newhead -> doAction action (newhead : tail)
-
   in case execute strat of
     (MoveAction move, newstrat) -> (move, newstrat)
+
+test strat = 
+  do
+    my <- createSlotsM 
+    his <- createSlotsM 
+    loop my his strat
+  where 
+    loop my his strat = 
+      do fmy  <- freezeSlots my
+         fhis <- freezeSlots his
+         let (move, newstrat) = strategy strat fmy fhis
+         print move
+         case move of
+           MoveCS card slot -> do
+             card2 <- lookupCardM my slot
+             result <- applyCard False card card2 my his
+             print $ shows slot $ "={" ++ (shows result "}")
+             writeCardM my slot result
+           MoveSC slot card -> do
+             card1 <- lookupCardM my slot
+             result <- applyCard False card1 card my his
+             print $ shows slot $ "={" ++ (shows result "}")
+             writeCardM my slot result
+         loop my his newstrat
+
