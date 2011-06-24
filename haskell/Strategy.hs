@@ -67,16 +67,13 @@ valToApp num
   | num `mod` 2 == 1 = Succ :$ valToApp (num - 1)
   | otherwise        = Dbl :$ valToApp (num `div` 2)
 
+applyCS :: Card -> Int -> Strategy()
 applyCS card slot 
   | isSimpleCard card = playMove $ MoveCS card slot
   | otherwise         = error (shows "applyCS on " $ show card)
 
 applySC :: Int -> Card -> Strategy()
 applySC slot (Val n) | n > 0 = applySC slot $ valToApp n
-applySC slot (c1 :$ c2) | slot /= 0 && False =
-  do setCard 0 c1
-     setCard 0 c2
-     applySC slot $ get 0
 applySC slot (c1 :$ c2) =
   do applyCS K slot
      applyCS S slot
@@ -87,16 +84,11 @@ applySC slot card = playMove $ MoveSC slot card
 setCard :: Int -> Card -> Strategy()
 setCard slot (Val n) = setNumber slot n
 setCard slot (c1 :$ c2)
-   | isSimpleCard c1 = do
-       setCard slot c2
+  | isSimpleCard c1 =
+    do setCard slot c2
        applyCS c1 slot
-   | False = do
-       setCard slot c2
-       setCard 0 $ get slot
-       setCard slot c1
-       applySC slot $ get 0
-   | otherwise = do
-       setCard slot c1
+  | otherwise = 
+    do setCard slot c1
        applySC slot c2
 setCard slot c = do
    card <- getCard Me slot
@@ -108,19 +100,26 @@ setCard slot c = do
 mainStrategy :: Strategy ()
 mainStrategy = do
   let c = 3
-      d = 4
-      e = 5
+      d = 0
+      e = 1
   setCard 1 $ Attack :$ zero :$ zero
   setCard 2 $ Attack :$ (Succ :$ zero) :$ zero
   setCard 0 $ Val (6*1024)
   applySC 1 $ get 0
   applySC 2 $ get 0
-  setCard c $ s (s (s Help I) (k (get 0))) (s (s (k Copy) (k (val c))) Succ)
-  setCard d $ k (s (s (k Copy) (k (val e))) I)
-  setCard 2 $ s (s (s (buildrec Dec 10) Zombie) 
-                   (get d))
-                (s (k Get) (k (Val 2)))
-  setCard e $ s (s (k Copy) (k (Val c))) (s (k Copy) (k (Val d)))
+  applyCS K 0
+  setCard c $ S :$ s (s Help I) (get 0) 
+  setCard 0 $ s (s (k Copy) (k (val c))) Succ
+  applySC c $ get 0
+  setCard 0 $ k (s (s (k Copy) (k (val e))) I)
+  -- setCard 2 $ S :$ (s (s (buildrec Dec 10) Zombie) (get 0))
+  setCard 2 $ S :$ (s Zombie (get 0))
+  setCard 0 $ s (k Get) (k (Val 2))
+  applySC 2 $ get 0
+  setCard 0 $ k (Val c)
+  setCard e $ S :$ (s (k Copy) (get 0)) 
+  setCard 0 $ (s (k Copy) (k (Val d)))
+  applySC e $ get 0
   let loop = 
         do setCard d (Val 0)
            applySC 2 zero
@@ -143,5 +142,3 @@ strategy ((Strategy strat) : fallback) my his =
       in (move, newstrat : newfallback)
     StratCont (Just move) newstrat -> (move, newstrat : fallback)
     StratRet _ -> strategy fallback my his
-  
-  
