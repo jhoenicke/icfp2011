@@ -209,8 +209,8 @@ applyCard isZombie func arg my his = do
             return I
           Zombie :$ x -> do
             slot <- getOtherCardSlot x
-            vitality <- lookupVitalityM my slot
-            when (vitality <= 0) $ writeZombieM my slot arg
+            vitality <- lookupVitalityM his slot
+            when (vitality <= 0) $ writeZombieM his slot arg
             return I
           _ -> return $ func :$ arg
   apply func arg

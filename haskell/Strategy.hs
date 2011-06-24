@@ -4,18 +4,34 @@ import Control.Monad
 import Debug.Trace
 
 data Player = Me | Him
-data StrategyCont a = StratRet a | StratCont (Maybe Move) (Strategy a)
+data Action = MoveAction Move 
+            | StartThread Int (Strategy ())
+            | KillThread Int
+            | Yield
+data StrategyCont a = StratRet a | StratCont Action (Strategy a)
 newtype Strategy a = Strategy { runStrategy :: Slots -> Slots -> StrategyCont a}
 
 instance Monad (Strategy) where
-  return a = Strategy $ \me him -> StratRet a
-  (>>=) (Strategy strat1) fstrat2 = Strategy $ \me him -> 
-    case strat1 me him of
-        StratRet a -> runStrategy (fstrat2 a) me him
-        StratCont move cstrat -> StratCont move (cstrat >>= fstrat2)
+  return a = Strategy $ \my his -> StratRet a
+  (>>=) strat1 fstrat2 = Strategy $ \my his -> 
+    case runStrategy strat1 my his of
+        StratRet a -> runStrategy (fstrat2 a) my his
+        StratCont act cstrat -> StratCont act (cstrat >>= fstrat2)
   
-playMove :: Move -> Strategy ()
-playMove move = Strategy $ \my his -> StratCont (Just move) (return ())
+action :: Action -> Strategy ()
+action act = Strategy $ \my his -> StratCont act $ return ()
+
+playMove move        = action $ MoveAction move
+yield                = action Yield
+startThread i thread = action $ StartThread i thread
+killThread i         = action $ KillThread i
+
+firstAction :: Strategy () -> Strategy ()
+firstAction strat =  
+  trace "firstAction" $
+  Strategy $ \my his -> case runStrategy strat my his of
+    StratCont act _ -> StratCont act   $ return ()
+    StratRet _      -> StratCont Yield $ return ()
 
 getCard :: Player -> Int -> Strategy (Card)
 getCard Me i = Strategy $ \my his -> StratRet (lookupCardI my i)
@@ -62,6 +78,14 @@ setNumber slot num = do
     I -> do { applySC slot zero ; setNumber slot num }
     _ -> do { applyCS Put slot  ; setNumber slot num }
 
+costSetNumber I num = 1 + (costSetNumber zero num)
+costSetNumber c@(Val i) num 
+  | i < num `div` 2 = (costSetNumber c (num `div` 2)) + 1 + (num `mod` 2)
+  | num < i         = 2 + (costSetNumber zero num)
+  | num - i < 6     = num - i
+  | otherwise       = min (2 + (costSetNumber zero num)) (num - i)
+costSetNumber _ num = 2 + (costSetNumber zero num)
+
 valToApp num 
   | num == 0         = Val 0
   | num `mod` 2 == 1 = Succ :$ valToApp (num - 1)
@@ -96,12 +120,44 @@ setCard slot c = do
      I -> applySC slot c
      _ -> do { applyCS Put slot ; setCard slot c }
 
+reviveRegister reg = do
+  let isfree x = return $ x > 5
+      computeCost x = do
+        card <- getCard Me x
+        return $ costSetNumber card reg
+      chooseBest (x,freex,costx) y = do
+        vity <- getVitality Me y
+        if (vity <= 0) 
+          then return (x,freex,costx)
+          else do
+            freey <- isfree y
+            costy <- computeCost y
+            return $ case () of
+              _ | freex && not freey -> (x, freex, costx)
+                | freey && not freex -> (y, freey, costy)
+                | costx < costy      -> (x, freex, costx)
+                | costx > costy      -> (y, freey, costy)
+                | x `mod` 8 == 7     -> (x, freex, costx)
+                | otherwise          -> (y, freey, costy)
+              
+  vit  <- getVitality Me reg
+  trace ("Check Reg " ++ show reg ++ ": " ++ show vit) $ return ()
+  when (vit <= 0) $ do
+    trace ("Revive Reg " ++ (show reg)) $ return ()
+    (usereg,_,_) <- foldM chooseBest (0,False,100) [0..255]
+    setNumber usereg reg
+    applyCS Revive usereg
+
+reviver = do 
+  trace "Reviver" $ firstAction (forM_ [0..5] reviveRegister)
+  trace "Recurse" $ reviver
 
 mainStrategy :: Strategy ()
 mainStrategy = do
   let c = 3
       d = 0
       e = 1
+  startThread 1 $ reviver
   setCard 1 $ Attack :$ zero :$ zero
   setCard 2 $ Attack :$ (Succ :$ zero) :$ zero
   setCard 0 $ Val (6*1024)
@@ -134,11 +190,22 @@ mainStrategy = do
 
 getStrategy = [ mainStrategy ]
 
-strategy :: [Strategy ()] -> Slots -> Slots -> (Move, [Strategy ()])
-strategy ((Strategy strat) : fallback) my his =
-  case strat my his of
-    StratCont Nothing newstrat -> 
-      let (move, newfallback) = strategy fallback my his 
-      in (move, newstrat : newfallback)
-    StratCont (Just move) newstrat -> (move, newstrat : fallback)
-    StratRet _ -> strategy fallback my his
+strategy :: [ Strategy () ] -> Slots -> Slots -> (Move, [ Strategy () ])
+strategy strat my his =
+  let doAction (StartThread 1 thread) list = execute (thread:list)
+      doAction (StartThread n thread) list = (StartThread (n-1) thread, list)
+      doAction (KillThread 0) (_:tail)     = execute tail
+      doAction (KillThread n) list         = (KillThread (n-1), list)
+      doAction (MoveAction move) list      = (MoveAction move, list)
+      doAction Yield (head:tail) =
+        let (action, newtail) = execute tail
+        in doAction action (head : newtail)
+           
+      execute :: [ Strategy () ] -> (Action, [ Strategy () ])
+      execute (head : tail) =
+        case runStrategy head my his of
+          StratRet _ -> execute tail
+          StratCont action newhead -> doAction action (newhead : tail)
+
+  in case execute strat of
+    (MoveAction move, newstrat) -> (move, newstrat)
