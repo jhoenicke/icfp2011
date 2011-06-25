@@ -3,7 +3,7 @@ import Engine
 import Data.Char (isDigit,isLower)
 
 data LambdaTerm = X String | C Card | App LambdaTerm LambdaTerm
-                deriving (Eq,Show)
+                deriving (Eq)
 
 infixl 1 $=
 ($=) (C func) (C arg) = C (func :$ arg)
@@ -14,16 +14,26 @@ containsVar x (X y)          = x == y
 containsVar x (C _)          = False
 containsVar x (App func arg) = (containsVar x func) || (containsVar x arg)
 
-lambda :: String -> LambdaTerm -> LambdaTerm
-lambda x term 
+buildLambda :: String -> LambdaTerm -> LambdaTerm
+buildLambda x term 
   | not (containsVar x term) = (C K) $= term
-lambda x (X y) | x == y      = C I
-lambda x (App func (X y)) 
+buildLambda x (X y) | x == y = C I
+buildLambda x (App func (X y)) 
   | not (containsVar x func) 
     && x == y                = func
-lambda x (App func arg)      = (C S) $= (lambda x func) $= (lambda x arg)
+buildLambda x (App func arg) = 
+  (C S) $= (buildLambda x func) $= (buildLambda x arg)
+
+lambdaMap _     (C card)       = card
+lambdaMap subst (X y)          = subst y
+lambdaMap subst (App func arg) = (lambdaMap subst func) :$ (lambdaMap subst arg)
 
 cardOf (C card) = card
+
+instance Show LambdaTerm where
+  showsPrec _ (C c)  s = shows c s
+  showsPrec _ (X x)  s = x ++ s
+  showsPrec _ (App f a) s = shows f $ '(' : shows a (')' : s)
 
 instance Read LambdaTerm where
   readsPrec d = if d < 10 then readsTerm else read1
@@ -61,7 +71,7 @@ instance Read LambdaTerm where
                             (result,x) <- readsArgs (card $= arg) s']
             | otherwise = [ (card,s) ]
             where args = read1 s
-          readsLambda s = [ (lambda var term, x) | 
+          readsLambda s = [ (buildLambda var term, x) | 
                             (var, s2) <- lex s,
                             (term, x) <- readsTerm s2]
           readsLazyExpand s = [ (lazyExpand var term, x) | 
@@ -72,4 +82,5 @@ instance Read LambdaTerm where
                   lazyExpand x (C (f :$ a)) = 
                     (C (K :$ f) $= (X x)) $= (C (K :$ a) $= (X x))
    
-lambdaCard = cardOf . read
+lambdaCard = lambda (\x -> undefined) 
+lambda subst str = lambdaMap subst (read str)

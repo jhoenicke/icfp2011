@@ -128,10 +128,7 @@ instance Exception ApplyException
 applyCard :: Bool -> Card -> Card -> IOSlots -> IOSlots -> IO Card
 applyCard isZombie func arg my his = do
   ctr <- newIORef 0
-  let incAndCheck 1000 = throw ApplyLimitException
-      incAndCheck c = c + 1
-      
-      getCardValue (Val n) = return n
+  let getCardValue (Val n) = return n
       getCardValue _ = throw NotNumericException
       
       getCardSlot (Val n) | n >= 0 && n < 256 = return n
@@ -150,8 +147,11 @@ applyCard isZombie func arg my his = do
         | isZombie = limit $ vit - incr
         | otherwise = limit $ vit + incr
       
-      apply func arg = do
-        modifyIORef ctr incAndCheck
+      apply func arg = do        
+        ctrval <- readIORef ctr
+        when (ctrval > 1000) $ throw ApplyLimitException
+        writeIORef ctr (ctrval + 1)
+        putStrLn ("applyCard "++show ctrval++" card "++show func++" on "++show arg)
         case func of
           S :$ f :$ g -> do
             h <- apply f arg
@@ -214,3 +214,35 @@ applyCard isZombie func arg my his = do
             return I
           _ -> return $ func :$ arg
   apply func arg
+
+applyWithCatch isZombie slot func arg my his =
+  Control.Exception.catch (applyCard isZombie func arg my his)
+      ((\e -> {-trace (show e) $-} return I) :: ApplyException -> IO Card)
+
+processNormal my his slot func arg =
+  do vit <- lookupVitalityM my slot
+     result <- if vit <= 0 then return I
+               else applyWithCatch False slot func arg my his
+     writeCardM my slot result
+  
+processZombie my his slot =
+  do vitality <- lookupVitalityM my slot
+     when (vitality < 0) $ 
+       do card <- lookupCardM my slot
+          applyWithCatch True slot card I my his
+          writeCardM my slot I
+          writeVitalityM my slot 0
+
+processMove my his (MoveCS card slot) =
+  do card2 <- lookupCardM my slot
+     processNormal my his slot card card2
+processMove my his (MoveSC slot card) =
+  do card1 <- lookupCardM my slot
+     processNormal my his slot card1 card
+
+printSlot :: IOSlots -> Int -> IO ()
+printSlot my slot = do
+  vit <- lookupVitalityM my slot
+  card <- lookupCardM my slot
+  when (card /= I || vit /= 10000) $
+    putStrLn (shows slot $ "={" ++ (shows vit $ "," ++ shows card "}"))
