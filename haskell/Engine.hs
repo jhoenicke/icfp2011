@@ -151,7 +151,7 @@ applyCard isZombie func arg my his = do
         ctrval <- readIORef ctr
         when (ctrval > 1000) $ throw ApplyLimitException
         writeIORef ctr (ctrval + 1)
-        putStrLn ("applyCard "++show ctrval++" card "++show func++" on "++show arg)
+        -- putStrLn ("applyCard "++show ctrval++" card "++show func++" on "++show arg)
         case func of
           S :$ f :$ g -> do
             h <- apply f arg

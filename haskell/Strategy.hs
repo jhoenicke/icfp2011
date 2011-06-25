@@ -124,39 +124,41 @@ applySC slot card = playMove $ MoveSC slot card
 costsDiffCost usecost (Val n)  = 
   (2*steps - 3, if appDiff > 0 then [ (appDiff,0) ] else [])
     where steps = costsNumber n
-          appDiff = 2 * steps - 7 - head usecost
+          appDiff = 2 * steps - 3 - head usecost
 costsDiffCost usecost (c1 :$ c2) = 
-  (applyMinusSet, zipCostDiff applyMinusSet usecost diff1 diff2)
+  (applyMinusSet, zipCostDiff applyMinusSet 0 usecost diff1 diff2)
     where 
       (applyMinusSet1, diff1) = costsDiffCost usecost c1
       (applyMinusSet2, diff2) = costsDiffCost usecost c2
       applyMinusSet = 2 + (if isSimpleCard c1 then applyMinusSet2
                            else applyMinusSet1)
-      zipCostDiff _ [] _ _ = []
-      zipCostDiff a (use:useTail) [] [] =
+      zipCostDiff _ _ [] _ _ = []
+      zipCostDiff a over (use:useTail) [] [] =
         if ad > 0 then [ (ad, 0) ] else []
-          where ad = (a - 4 - use)
-      zipCostDiff a (use:useTail) d1 [] =      
-        zipCostDiff a (use:useTail) d1 [(0,0)]
-      zipCostDiff a (use:useTail) [] d2 =
-        zipCostDiff a (use:useTail) [(0,0)] d2
-      zipCostDiff a (use:useTail) ((ad1,sd1):d1Tail) ((ad2,sd2):d2Tail) =
+          where ad = (a - use)
+      zipCostDiff a over (use:useTail) d1 [] =      
+        zipCostDiff a over (use:useTail) d1 [(0,0)]
+      zipCostDiff a over (use:useTail) [] d2 =
+        zipCostDiff a over (use:useTail) [(0,0)] d2
+      zipCostDiff a over (use:useTail) ((ad1,sd1):d1Tail) ((ad2,sd2):d2Tail) =
         if ad == 0 && tail == [] then []
         else (ad, sd) : tail
-          where ad = max (ad1 + ad2) (a - 4 - use)
+          where adsum = ad1 + ad2 - over
+                ad = maximum[adsum, (a - use), 0]
                 sd = if isSimpleCard c1 then sd2 else sd1 + ad2
-                tail = zipCostDiff (a - ad + sd) useTail d1Tail d2Tail
+                tail = zipCostDiff (a - ad + sd) (ad - adsum) useTail d1Tail d2Tail
 costsDiffCost usecost _ = (-1, [])
 
 computeRegister :: [Int] -> Card -> Int
 computeRegister usecost c = 
-  findbest (-1) applyMinusSet usecost diff
+  findbest (-1) 0 applyMinusSet usecost diff
     where
       (applyMinusSet, diff) = costsDiffCost usecost c
-      findbest index a (use:useTail) ((ad,sd):dTail) =
-        if (a <= 4 - use) then index
-        else findbest (index+1) (a - ad + sd) useTail dTail
-      findbest index _ _ [] = index
+      findbest best index a (use:useTail) ((ad,sd):dTail) =
+        findbest newbest (index+1) (a - ad + sd) useTail dTail
+          where newbest = (if a - ad < use then best else index)
+      findbest best index a (use:useTail) [] = (if a < use then best else index)
+      findbest best _ _ [] [] = best
 
 -- compute costs for applying a card.
 --  it takes a list of additional costs for using no, one, etc extra registers
@@ -168,7 +170,7 @@ costsApply usecost (c1 :$ c2) =
   where apply1   = (costsApply usecost c1)
         apply2   = (costsApply usecost c2)
         setCost reg  = costsSet (take reg usecost) (c1 :$ c2) 
-                        + 4 + (usecost !! reg)
+                        + (usecost !! reg)
 costsApply usecost _ = 1
 
 -- compute costs for setting a card, where
@@ -181,9 +183,9 @@ costsSet usecost (c1 :$ c2)
 costsSet usecost _  = 2
 
 useCosts free = map costs free
-  where costs 0 = 0
-        costs 1 = 3
-        costs n = costsNumber n + 2
+  where headcost = costsNumber (head free) * 3 + 1
+        costs n = min (3*step+1) (step + 2 + headcost)
+          where step = costsNumber n
         
 -- compute for card and given free list, the costs for
 --   a : applying card to a slot, allowing use of slot 0 and free list
@@ -216,7 +218,9 @@ applySCR freeRegs slot c@(c1 :$ c2)
          applyCS S slot
          applySCR freeRegs slot c1
          applySCR freeRegs slot c2
-  where num     = computeRegister (useCosts freeRegs) c
+  where numt    = computeRegister (useCosts freeRegs) c
+        num     = 
+          trace ("applySCR "++show freeRegs++" on "++show c1++" $$ "++ show c2++": "++show numt) numt
         tmpreg  = freeRegs !! num
         newfree = take num freeRegs
 applySCR _ slot card = applySC slot card
