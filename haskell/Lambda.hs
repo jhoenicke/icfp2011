@@ -43,7 +43,6 @@ instance Read LambdaTerm where
                  "("      -> [ (card,x) | (card,s'') <- readsTerm s', 
                                (")",x) <- lex s'']
                  "%"      -> readsLambda s'
-                 "?"      -> readsLazyExpand s'
                  "zero"   -> [ (C (Val 0), s') ]
                  "I"      -> [ (C I, s') ]
                  "succ"   -> [ (C Succ, s') ]
@@ -74,13 +73,6 @@ instance Read LambdaTerm where
           readsLambda s = [ (buildLambda var term, x) | 
                             (var, s2) <- lex s,
                             (term, x) <- readsTerm s2]
-          readsLazyExpand s = [ (lazyExpand var term, x) | 
-                                (var, s2) <- lex s,
-                                (term, x) <- readsTerm s2]
-            where lazyExpand x (App f a) = 
-                    (C  K $= f  $= (X x)) $= (C  K $= a  $= (X x))
-                  lazyExpand x (C (f :$ a)) = 
-                    (C (K :$ f) $= (X x)) $= (C (K :$ a) $= (X x))
    
 lambdaCard = lambda (\x -> undefined) 
 lambda subst str = lambdaMap subst (read str)

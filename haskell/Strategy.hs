@@ -294,22 +294,36 @@ reviver = do
 trStrategy = 
   do
     setCardR [0,1,2,3] tr transformer
-    setNumber 6 10000
+    setNumber 6 9999
     setCardR [0,1,2,3] 7  $ lambda subst "(get tr) (%x I) 10"
     applySC 7 I
     applySC 7 I
     applySC 7 I
     applySC 7 I
-    applySC 7 K
-    applySC 7 zero
+    applySC 7 Put
+    applySC 10 zero
+    applySC 14 zero
   where
     tr    = 4
     subst "tr"     = Val tr
     subst "value"  = Val 6
     subst "doit"   = lambda subst "%x %y help x x y"
     transformer =
-      lambda subst $"%oc %reg %x x I (?x get tr) "++
-                    "(%z (?z doit reg) (?oc get value) (oc z)) (succ reg)"
+      lambda subst $"%oc %reg %x x (K get x tr) "++
+                    "(%z (K doit z reg) (K get oc value) (oc z)) (succ reg)"
+    
+maximize reg = 
+  do
+    setCardR [0,1,2,3] 10 transformer
+    setNumber 1 reg
+    setCardR []      0  $ lambda subst "get tr zero"
+    applySC   0 zero
+    applySC reg zero
+  where
+    tr    = 10
+    subst "tr"     = Val tr
+    transformer =
+      lambda subst $"%x %y K (help (get (succ x)) (get (succ x))) y 4096 (get y y)"
     
 
 {-
@@ -335,9 +349,9 @@ mainStrategy = do
   startThread 1 $ reviver
   setCardR [0]     2 $ lambdaCard "attack 0 0 6144"
   setCardR [0]     2 $ lambdaCard "attack 1 0 (get 0)"
-  setCardR [0,1,2] 3 $ lambdaCard "%x help x x 6144 ((?x copy 3) (succ x))"
-  setCardR [0,1,4] 2 $ lambdaCard "%x (zombie x %y (?y copy 1) y) (?x get 2)"
-  setCardR [0,4]   1 $ lambdaCard "%y (get 3) (?y copy 0)"
+  setCardR [0,1,2] 3 $ lambdaCard "%x help x x 6144 ((K copy x 3) (succ x))"
+  setCardR [0,1,4] 2 $ lambdaCard "%x (zombie x %y (K copy y 1) y) (K get x 2)"
+  setCardR [0,4]   1 $ lambdaCard "%y (get 3) (K copy y 0)"
   let loop = 
         do setCard 0 (Val 0)
            applySC 2 zero
@@ -371,6 +385,93 @@ strategy strat my his =
   in case execute strat of
     (MoveAction move, newstrat) -> (move, newstrat)
 
+megarec reg =
+  do setCardR []      0 $ lambdaCard "%z %f %x f (z f x)"
+     setCardR []    reg $ lambdaCard "get 0"
+     applySCR []      0 $ lambdaCard "I"
+     applySCR []    reg $ lambdaCard "get 0"
+     applySCR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "S inc" 
+     setCardR []      0 $ Get :$ (Val reg)
+     applySCR []      0 $ lambdaCard "inc" 
+     applySCR []    reg $ lambdaCard "get 0" 
+     setCardR []      0 $ Get :$ (Val reg)
+     applySCR []    reg $ lambdaCard "zero"
+     setCardR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "zero"
+     setCardR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "zero"
+     setCardR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "zero"
+     applySCR []      0 $ lambdaCard "I"
+
+{-
+Y(f,c) = f(f(f c))
+Y'(fxs,c) = fxs (fxs (c))
+Y'(Y',fxs,c) = Y' (Y' (fxs)) c 
+             = Y' (fxs)( Y' (fxs) ( c))
+             = fxs(fxs(fxs(fxs(c))))
+               
+
+fxs(c, x) = (%z z x c1, c2 (c2 x))
+w
+Y h f = f (h h f)
+Y Y 1 2  = (Y 1 1) (Y 1 1) 2 = 
+
+%f %h f (h f h) = %h S I (S h (K h)) = K(SI) (S S K)
+-}
+
+t = test [ recurse ]
+recurse =
+  do setCardR [1,2,3] 0 $ lambdaCard "(%h %x inc x (h h (succ x)))"
+     setCardR [0,1,2,3] 10 $ lambdaCard "(get 0) (get 0) 0"
+
+megarevive reg =
+  do setCardR []      0 $ lambdaCard "%z %f %x f (z f x)"
+     setCardR []    reg $ lambdaCard "get 0"
+     applySCR []      0 $ lambdaCard "I"
+     applySCR []    reg $ lambdaCard "get 0"
+     applySCR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "get 0" 
+     
+     {-setCardR []      1 $ lambdaCard "get 0"
+     applySCR []      1 $ lambdaCard "get 0"
+     applySCR []      0 $ lambdaCard "I"
+     applySCR []      1 $ lambdaCard "get 0"
+     applySCR []      1 $ lambdaCard "get 0"-}
+--fxs(c, x) = (%z z x c1, succ (c2 x))
+     applySCR [0,2] reg $ lambdaCard "%c (S revive inc) c (succ c)"
+     applySCR [0,2] reg $ lambdaCard "zero"
+     {-
+     setCardR []      0 $ Get :$ (Val reg)
+     applySCR []      0 $ lambdaCard "%x I" 
+     applySCR []      0 $ lambdaCard "64" 
+     applySCR []    reg $ lambdaCard "%x (get 0)" 
+     applySCR [0,2] reg $ lambdaCard "zero"
+     setCardR []      0 $ Get :$ (Val reg)
+     applySCR []      0 $ lambdaCard "inc" 
+     applySCR []    reg $ lambdaCard "get 0" 
+     setCardR []      0 $ Get :$ (Val reg)
+     applySCR []    reg $ lambdaCard "zero"
+     setCardR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "zero"
+     setCardR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "zero"
+     setCardR []    reg $ lambdaCard "get 0" 
+     applySCR []    reg $ lambdaCard "zero"
+     applySCR []      0 $ lambdaCard "I"-}
+
+--          (%f %x (get0 f) (get0 f) x)
+--  %f f (f x)          
+--   (S inc) ((S inc) inc)
+--          get0 get0 f x = get0 (get0 (get0 f)) x 
+--            =  (get0 (get0 f)) ((get0 (get0 f)) (get0 (get0 f) x))
+--           =  
+--  get2 get2 f = get2 (get2 f) = (get2 f) ((get2 fi %f %x (i f x) f x)"
+          
+
+
 test strat = 
   do
     my <- createSlotsM 
@@ -383,9 +484,9 @@ test strat =
          let (move, newstrat) = strategy strat fmy fhis
          putStrLn $ "Turn " ++ show turn ++ ": " ++ show move
          processMove my his move
-         --printSlot my $ case move of
-         --  MoveCS card slot -> slot
-         --  MoveSC slot card -> slot
+         printSlot my $ case move of
+           MoveCS card slot -> slot
+           MoveSC slot card -> slot
          loop my his newstrat (turn + 1)
 
 main :: IO ()
