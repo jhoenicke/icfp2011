@@ -1,8 +1,9 @@
---module Strategy where
+module Strategy where
 import Engine
 import Control.Monad
 import Debug.Trace
 import Lambda (lambda, lambdaCard)
+import System.IO (hFlush, stdout)
 
 data Player = Me | Him
 data Action = MoveAction Move 
@@ -242,18 +243,18 @@ setCard slot c = do
      
 setCardR :: [Int] -> Int -> Card -> Strategy()
 setCardR _ slot (Val n) = setNumber slot n
-setCardR freeRegs slot (c1 :$ c2)
-  | isSimpleCard c1 =
-    do setCardR freeRegs slot c2
-       applyCS c1 slot
-  | otherwise = 
-    do setCardR freeRegs slot c1
-       applySCR freeRegs slot c2
-setCardR _ slot c = do
-   card <- getCard Me slot
+setCardR freeRegs slot card = do
+   c <- getCard Me slot
    when (card /= c) $ case card of
-     I -> applySC slot c
-     _ -> do { applyCS Put slot ; setCard slot c }
+     (c1 :$ c2) | isSimpleCard c1 ->
+       do setCardR freeRegs slot c2
+          applyCS c1 slot
+                | otherwise ->
+         do setCardR freeRegs slot c1
+            applySCR freeRegs slot c2
+     _ -> if (c == I) then applySC slot card
+          else do applyCS Put slot
+                  setCardR freeRegs slot card
 
 
 reviveRegister reg = do
@@ -364,7 +365,7 @@ mainStrategy = do
            loop
   loop
 
-getStrategy = [ mainStrategy ]
+getStrategy = mainStrategy
 
 strategy :: [ Strategy () ] -> Slots -> Slots -> (Move, [ Strategy () ])
 strategy strat my his =
@@ -489,5 +490,49 @@ test strat =
            MoveSC slot card -> slot
          loop my his newstrat (turn + 1)
 
-main :: IO ()
-main = test [trStrategy]
+---------
+-- Main engine
+----------
+
+readMove = do
+  dir <- readLn
+  case dir of 
+    1 -> do
+      card <- readLn
+      slot <- card `seq` readLn
+      return $ MoveCS card slot
+    2 -> do
+      slot <- readLn
+      card <- readLn
+      card `seq` (return $ MoveSC slot card)
+
+printMove (MoveCS card slot) =
+  do print 1; print card; print slot; hFlush(stdout)
+printMove (MoveSC slot card) = 
+  do print 2; print slot; print card; hFlush(stdout)
+
+opponentMove my his = do
+  forM_ [0..255] (processZombie his my)
+  move <- readMove
+  processMove his my move
+
+gameloop :: [Strategy()] -> IOSlots -> IOSlots -> IO ()
+gameloop strat my his = do  
+  -- my move
+  forM_ [0..255] (processZombie my his)
+  freezeMy <- freezeSlots my
+  freezeHis <- freezeSlots his
+  let (move, newstrat) = strategy strat freezeMy freezeHis
+  -- trace ("turn: " ++ show (1 + (turn `div` 2))) $ return ()
+  -- trace ("move: " ++ show move) $ return ()
+  printMove move
+  processMove my his move
+  opponentMove my his
+  gameloop newstrat my his
+
+rungame :: Bool -> Strategy() -> IO ()
+rungame isFirst strat = do
+  my <- createSlotsM
+  his <- createSlotsM
+  when (not isFirst) $ opponentMove my his
+  gameloop [strat] my his
