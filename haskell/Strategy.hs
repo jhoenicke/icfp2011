@@ -226,6 +226,42 @@ applySCR freeRegs slot c@(c1 :$ c2)
         newfree = take num freeRegs
 applySCR _ slot card = applySC slot card
 
+{-
+secureApply regs slot c1 (Val n) = secureApply regs slot c1 (valToApp n)
+secureApply regs slot c1 (c2 :$ c3)
+  | num >= 0  = secureCard regs   slot (S :$ (K :$ c1) :$ get)
+                secureCard tmpreg slot (c2 :$ c3)
+                secureCard regs   slot (c1 :$ (get :$ (Val tmpreg)))
+      do setCardR newfree tmpreg c
+         applySCR newfree slot $ get tmpreg
+  | isSimpleCard c2 && isSimpleCard c3 =
+  | otherwise = secureCard regs slot (S :$ (K :$ c1) :$ c2 :$ c3) 
+  where numt    = computeRegister (useCosts regs) (c2 :$ c3)
+        num     = 
+          trace ("apply "++show regs++" on "++show c1++" $$ "++ show c2++": "++show numt) numt
+        tmpreg  = regs !! num
+        newfree = take num regs
+
+secureCard :: [Int] -> Int -> Card -> Strategy()
+secureCard regs slot (Val n) = setNumber slot n
+secureCard regs slot c = do
+  vit <- getVitality Me slot
+  if (vit <= 0) 
+    then do reviveSlot slot
+            secureCard slot c
+    else do current <- getCard Me slot
+            when (current /= c) $ do
+              case c of
+                c1 :$ c2 | isSimpleCard c2 
+                           && (c1 == current 
+                               || !isSimpleCard c1) -> applySC slot c2
+                         | isSimpleCard c1 -> do secureCard regs slot c2 
+                                                 applyCS c1 slot
+                         | otherwise -> secureApply regs slot c1 c2
+                _ | current == I -> applySC slot c
+                  | otherwise -> secureCard slot I; applySC slot c
+-}
+
 setCard :: Int -> Card -> Strategy()
 setCard slot (Val n) = setNumber slot n
 setCard slot (c1 :$ c2)
